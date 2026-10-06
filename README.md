@@ -11,36 +11,61 @@ docker compose up -d     # Postgres :5432, Keycloak :8080
 pnpm dev                 # http://localhost:3000, must be this port: Keycloak calls back to it
 ```
 
-- `/` is the quote form. Signed-out visitors see a link that goes through Keycloak sign in first.
-- `/quotes` lists the signed-in user's own quotes, newest first, 10 per page (`?page=2`).
-- `/admin/quotes` lists every user's quotes with their owner, 10 per page. Only admins see the nav bar link, others get a 404.
-- Both pages render `app/quotes/quotes.tsx` with a scope (`user` or `admin`) after the page checks sign in (and admin). It reads one page from Postgres on the server. The table (`app/quotes/quotes-table.tsx`, shadcn's Table) runs in the browser, so dates show in the viewer's time zone. The page buttons are links.
-- UI components come from shadcn with Base UI (`components.json`, `components/ui`). Add more with `pnpm dlx shadcn@latest add <name>`.
-- Keycloak admin: http://localhost:8080, `admin` / `admin`. Realm `financing` from `docker/keycloak/financing-realm.json`.
 - Seeded users: `admin@test.com` / `admin`, `user@test.com` / `user`. Sign up is open.
+- Keycloak admin: http://localhost:8080, `admin` / `admin`. Realm `financing` from `docker/keycloak/financing-realm.json`.
+- `NEXT_PUBLIC_PRICE_PER_KW` in `.env` sets the price of 1 kW for the app and the Postgres money limit. It is read at build time and when the Postgres volume is created.
+- Postgres runs `docker/postgres/*.sql` and Keycloak imports the realm only on first start. After changing them (or the price), reset with `docker compose down -v && docker compose up -d`.
 
-`NEXT_PUBLIC_PRICE_PER_KW` in `.env` sets the price of 1 kW for the app and the Postgres money limit. It is fixed at build time and when the Postgres volume is created, so after a change rebuild and reset.
+## Pages
 
-Postgres runs `docker/postgres/*.sql` and Keycloak imports the realm only on first start. After changing them, reset with `docker compose down -v && docker compose up -d`.
+- `/` quote form. Signed-out visitors are sent through Keycloak sign in first.
+- `/quotes` the user's own quotes, newest first, 10 per page (`?page=2`).
+- `/admin/quotes` every user's quotes with their owner. Admins only, others get a 404.
+
+Both lists render `app/quotes/quotes.tsx` with a scope (`user` or `admin`). It reads one page from Postgres on the server, and the table runs in the browser so dates show in the viewer's time zone. UI is shadcn with Base UI (`pnpm dlx shadcn@latest add <name>`).
 
 ## Auth
 
 Better Auth with Keycloak (`lib/auth.ts`), sessions in Postgres.
 
-- Every user needs a first and last name. The app copies "first last" and the email from Keycloak on every sign in.
-- Roles come from Keycloak too: realm role `admin` (seeded on `admin@test.com`) is copied to `user.role` on every sign in. A role change applies at the user's next sign in.
+- Name ("first last"), email and the realm role `admin` are copied from Keycloak on every sign in, so a role change applies at the next sign in.
 - Sign out ends both the app and the Keycloak session.
-- When a Keycloak session ends anywhere, Keycloak calls `POST /api/backchannel-logout` and the app ends **all** sessions of that user, on every device.
+- When a Keycloak session ends anywhere, Keycloak calls `POST /api/backchannel-logout` and the app ends **all** sessions of that user.
 
 ## Database
 
-Schema in `docker/postgres/*.sql`. Every quote is saved in `quote` with its offers in `quote_offer`, and is never changed or deleted.
+Schema in `docker/postgres/*.sql`. `user`, `session`, `account` and `verification` come from Better Auth. Each quote is saved in `quote` with its offers in `quote_offer`, and is never changed or deleted.
 
-- Money columns use the `amount` type: `numeric(12, 2)`, so whole cents only, from 0 to 1000x the biggest possible price (1000 kW x `NEXT_PUBLIC_PRICE_PER_KW`).
-- Row level security: a user sees only their own quotes, an admin sees all. Nobody can add a quote for someone else.
-- `docker/postgres/04-seed.sql` seeds the two test users with their accounts and quotes. Each account links to Keycloak by user id, so the realm file pins those ids. Regenerate it from a running database with `pg_dump --data-only --column-inserts -t '"user"' -t quote -t quote_offer`, plus the account rows without tokens.
-- The app connects as `financing`. `superuser` only runs the setup scripts: the app must never connect as it, because it skips row level security. For each save it sets `app.user_id` for that transaction only (`data/quote-store.ts`).
-- The app refuses to start, and refuses every new connection, if its role is a superuser or has `bypassrls` (`data/db.ts`, `instrumentation.ts`).
+```mermaid
+erDiagram
+    quote ||--|{ quote_offer : has
+
+    quote {
+        uuid id PK "uuidv7"
+        text user_id FK "user.id, unique with request_id"
+        uuid request_id "unique with user_id"
+        text address "1 to 500 chars"
+        numeric monthly_consumption_kwh "above 0, max 100000"
+        numeric system_size_kw "1 to 1000"
+        amount down_payment
+        amount system_price
+        amount principal "system_price - down_payment, above 0"
+        smallint band "0 to 99"
+        timestamptz created_at
+    }
+    quote_offer {
+        uuid quote_id PK, FK
+        integer term_years PK
+        numeric apr "above 0, below 100"
+        amount monthly_payment
+    }
+```
+
+Money uses the `amount` type: `numeric(12, 2)`, whole cents, from 0 to 1000x the biggest possible price. Row level security lets a user see only their own quotes and an admin see all, and nobody can add a quote for someone else.
+
+The app connects as `financing` and sets `app.user_id` per transaction (`data/quote-store.ts`). It refuses to start, or to open a connection, if its role is a superuser or has `bypassrls` (`data/db.ts`, `instrumentation.ts`). `superuser` only runs the setup scripts.
+
+`docker/postgres/04-seed.sql` seeds the test users, their accounts and quotes. The realm file pins the user ids the accounts link to. Regenerate with `pg_dump --data-only --column-inserts -t '"user"' -t quote -t quote_offer`, plus the account rows without tokens.
 
 ## Scripts
 
@@ -54,24 +79,31 @@ Schema in `docker/postgres/*.sql`. Every quote is saved in `quote` with its offe
 
 ## API
 
-`POST /api/quotes` with a JSON body and a signed-in session cookie. Name and email come from the session, never the body.
+`POST /api/quotes` with a JSON body and a signed-in session cookie. Name and email come from the session, never the body. All rules live in `lib/quote.ts`.
 
 | Field                   | Rule                                              |
 | ----------------------- | ------------------------------------------------- |
 | `requestId`             | UUID, the same on every retry of one quote        |
-| `address`               | Non-empty text                                    |
+| `address`               | Text, 1 to 500 characters, no NUL byte            |
 | `monthlyConsumptionKwh` | Number above 0, max 100000, at most 2 decimals    |
 | `systemSizeKw`          | Number 1 to 1000, at most 2 decimals              |
 | `downPayment`           | Optional (default 0), cents only, below the price |
 
-A repeat of a saved `requestId` saves nothing, so a retry never adds a duplicate. The form makes the id from the inputs and a random value per page load, so a resubmit of the same inputs repeats it.
+Price is `systemSizeKw * NEXT_PUBLIC_PRICE_PER_KW`, rounded to cents. A repeat of a saved `requestId` saves nothing, so a retry never adds a duplicate. The form makes the id from the inputs and a random value per page load.
 
-Price is `systemSizeKw * 1200`, rounded to cents. All rules live in `lib/quote.ts`.
+| Status | Body                                                                                                                                            |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `200`  | `{ systemPrice, band, offers: [{ termYears, apr, principalUsed, monthlyPayment }] }`. Also sent if saving fails for a temporary reason (logged) |
+| `400`  | Body is not JSON: `{ errors: { form } }`                                                                                                        |
+| `401`  | Not signed in: `{ errors: { form } }`                                                                                                           |
+| `422`  | Invalid input, or data Postgres refuses: `{ errors: { <field>, form? } }`                                                                       |
+| `500`  | Unexpected error: logged, no details                                                                                                            |
 
-| Status | Body                                                                                                                     |
-| ------ | ------------------------------------------------------------------------------------------------------------------------ |
-| `200`  | `{ systemPrice, band, offers: [{ termYears, apr, principalUsed, monthlyPayment }] }`. Sent even if saving fails (logged) |
-| `400`  | Body is not JSON: `{ errors: { form } }`                                                                                 |
-| `401`  | Not signed in: `{ errors: { form } }`                                                                                    |
-| `422`  | Invalid input: `{ errors: { <field>, form? } }`                                                                          |
-| `500`  | Unexpected error: logged, no details                                                                                     |
+## Notes
+
+Assumptions and open decisions, also marked `NOTE:` in the code.
+
+- **Consumption limit** (`lib/quote.ts`): the max of 100000 kWh a month is a picked number, about 100x the biggest house (~1000 kWh).
+- **Down payment** (`lib/quote.ts`): it only has to be below the price. How low the principal may go (a minimum loan) is a business decision.
+- **Risk band** (`lib/quote.ts`): the spec did not say how `systemSizeKw` affects the band. Assumed a bigger system means a bigger principal, so a better rate.
+- **Band column** (`docker/postgres/03-quotes.sql`): stored as a number, not a letter, so new bands need no data migration. `data/quote-store.ts` maps letters to numbers.
