@@ -24,6 +24,12 @@ async function keycloakAdmin(request: APIRequestContext) {
 		remove: (id: string) => request.delete(`${users}/${id}`, { headers }),
 		// Ends all the user's Keycloak sessions, like "Sign out" in the admin console
 		signOut: (id: string) => request.post(`${users}/${id}/logout`, { headers }),
+		// Gives or takes the realm role "admin" from docker/keycloak/financing-realm.json
+		setAdmin: async (id: string, admin: boolean) => {
+			const role = await (await request.get(`${users.replace("/users", "/roles")}/admin`, { headers })).json();
+			const url = `${users}/${id}/role-mappings/realm`;
+			return admin ? request.post(url, { headers, data: [role] }) : request.delete(url, { headers, data: [role] });
+		},
 	};
 }
 
@@ -91,6 +97,38 @@ test("sign in through Keycloak saves the session in Postgres, sign out ends it",
 	// Keycloak session must be gone too, so signing in asks for the password again
 	await page.getByRole("button", { name: "Sign in" }).click();
 	await expect(page.locator("#password")).toBeVisible();
+});
+
+const appRole = async (userEmail: string) =>
+	(await db.query(`SELECT role FROM "user" WHERE email = $1`, [userEmail])).rows[0]?.role;
+
+test("seeded admin signs in as admin, the test user as user", async ({ page }) => {
+	await page.goto("/");
+	await signInWithKeycloak(page, { email: "admin@test.com", password: "admin" });
+	await expect(page.getByText("admin@test.com")).toBeVisible();
+
+	expect(await appRole("admin@test.com")).toBe("admin");
+	expect(await appRole(email)).toBe("user");
+});
+
+test("admin role is copied from Keycloak on every sign in, given and taken away", async ({
+	page,
+	request,
+	tempUser,
+}) => {
+	const admin = await keycloakAdmin(request);
+	expect((await admin.setAdmin(tempUser.id, true)).ok()).toBe(true);
+
+	await page.goto("/");
+	await signInWithKeycloak(page, tempUser);
+	await expect(page.getByText(tempUser.email)).toBeVisible();
+	expect(await appRole(tempUser.email)).toBe("admin");
+
+	await page.getByRole("button", { name: "Sign out" }).click();
+	expect((await admin.setAdmin(tempUser.id, false)).ok()).toBe(true);
+	await signInWithKeycloak(page, tempUser);
+	await expect(page.getByText(tempUser.email)).toBeVisible();
+	expect(await appRole(tempUser.email)).toBe("user");
 });
 
 test("signed out home page has no quote form, get personal quote goes to sign in, then to the form", async ({

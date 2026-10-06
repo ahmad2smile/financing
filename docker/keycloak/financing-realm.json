@@ -7,6 +7,9 @@
 	"duplicateEmailsAllowed": false,
 	"resetPasswordAllowed": false,
 	"sslRequired": "external",
+	"roles": {
+		"realm": [{ "name": "admin", "description": "Sees every quote in the app" }]
+	},
 	"clients": [
 		{
 			"clientId": "financing-web",
@@ -22,6 +25,21 @@
 			"serviceAccountsEnabled": false,
 			"redirectUris": ["http://localhost:3000/api/auth/callback/keycloak"],
 			"webOrigins": ["+"],
+			"protocolMappers": [
+				{
+					"name": "realm roles in ID token",
+					"protocol": "openid-connect",
+					"protocolMapper": "oidc-usermodel-realm-role-mapper",
+					"config": {
+						"claim.name": "roles",
+						"multivalued": "true",
+						"jsonType.label": "String",
+						"id.token.claim": "true",
+						"access.token.claim": "false",
+						"userinfo.token.claim": "false"
+					}
+				}
+			],
 			"attributes": {
 				"pkce.code.challenge.method": "S256",
 				"post.logout.redirect.uris": "http://localhost:3000/",
@@ -44,6 +62,21 @@
 			"serviceAccountsEnabled": false,
 			"redirectUris": ["http://localhost:3100/api/auth/callback/keycloak"],
 			"webOrigins": ["+"],
+			"protocolMappers": [
+				{
+					"name": "realm roles in ID token",
+					"protocol": "openid-connect",
+					"protocolMapper": "oidc-usermodel-realm-role-mapper",
+					"config": {
+						"claim.name": "roles",
+						"multivalued": "true",
+						"jsonType.label": "String",
+						"id.token.claim": "true",
+						"access.token.claim": "false",
+						"userinfo.token.claim": "false"
+					}
+				}
+			],
 			"attributes": {
 				"pkce.code.challenge.method": "S256",
 				"post.logout.redirect.uris": "http://localhost:3100/",
@@ -61,6 +94,7 @@
 			"firstName": "Admin",
 			"lastName": "User",
 			"enabled": true,
+			"realmRoles": ["default-roles-financing", "admin"],
 			"credentials": [
 				{
 					"type": "password",

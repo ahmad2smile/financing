@@ -3,8 +3,9 @@ services:
   postgres:
     image: postgres:18-alpine
     environment:
-      POSTGRES_USER: financing
-      POSTGRES_PASSWORD: financing
+      # Only for setup (docker/postgres/*.sql) and admin work. The app connects as "financing".
+      POSTGRES_USER: superuser
+      POSTGRES_PASSWORD: superuser
       POSTGRES_DB: financing
     ports:
       - "5432:5432"
@@ -13,7 +14,7 @@ services:
       # Runs only when the volume is empty. Reset with `docker compose down -v`.
       - ./docker/postgres:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U financing -d financing && pg_isready -U keycloak -d keycloak"]
+      test: ["CMD-SHELL", "pg_isready -U superuser -d financing && pg_isready -U keycloak -d keycloak"]
       interval: 5s
       timeout: 5s
       retries: 20

@@ -1,6 +1,11 @@
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { Pool } from "pg";
 import { testUser } from "./sign-in";
+
+// Reads saved quotes as the app does (DATABASE_URL, under row level security)
+const db = new Pool({ connectionString: process.env.DATABASE_URL });
+test.afterAll(() => db.end());
 
 async function fill(page: Page, values: Partial<Record<string, string>> = {}) {
 	const all = {
@@ -66,6 +71,46 @@ test("quote request does not send name or email, the server takes them from the 
 	await expect(results(page)).toContainText("$12,000.00");
 });
 
+test("submitted quote is saved with its offers, owned by the signed-in user", async ({ page }) => {
+	// Other tests here save quotes in parallel, so find this one by its address
+	const address = `${Date.now()} Saved St`;
+
+	await fill(page, {
+		Address: address,
+		"Monthly consumption (kWh)": "512.25",
+		"Down payment (USD, optional)": "1,234.56",
+	});
+	await submit(page);
+	await expect(results(page)).toContainText("$12,000.00");
+
+	const client = await db.connect();
+	try {
+		await client.query("BEGIN");
+		await client.query(`SELECT set_config('app.user_id', id, true) FROM "user" WHERE email = $1`, [testUser.email]);
+		const { rows } = await client.query(
+			`SELECT u.email, q.monthly_consumption_kwh, q.down_payment, q.system_price, q.principal, q.band,
+			        array_agg(o.term_years || ':' || o.monthly_payment ORDER BY o.term_years) AS offers
+			 FROM quote q JOIN "user" u ON u.id = q.user_id JOIN quote_offer o ON o.quote_id = q.id
+			 WHERE q.address = $1 GROUP BY q.id, u.email`,
+			[address],
+		);
+		expect(rows).toEqual([
+			{
+				email: testUser.email,
+				monthly_consumption_kwh: "512.25",
+				down_payment: "1234.56",
+				system_price: "12000.00",
+				principal: "10765.44",
+				band: 0, // A, see BAND_CODE in data/quote-store.ts
+				offers: ["5:212.66", "10:124.44", "15:96.16"],
+			},
+		]);
+	} finally {
+		await client.query("ROLLBACK");
+		client.release();
+	}
+});
+
 test("down payment with thousands commas is used, not dropped", async ({ page }) => {
 	await fill(page, { "Down payment (USD, optional)": "5,000" });
 	await submit(page);
@@ -94,6 +139,17 @@ test("bad number text shows an error and sends nothing", async ({ page }) => {
 	await submit(page);
 
 	await expect(page.getByText("Enter 0 or more, with at most 2 decimals (cents).")).toBeVisible();
+	expect(requests).toBe(0);
+});
+
+test("monthly consumption with 3 decimals shows an error and sends nothing", async ({ page }) => {
+	let requests = 0;
+	await page.route("/api/quotes", (route) => (requests++, route.continue()));
+
+	await fill(page, { "Monthly consumption (kWh)": "500.125" });
+	await submit(page);
+
+	await expect(page.getByText("Enter a number above 0 (max 100000), with at most 2 decimals.")).toBeVisible();
 	expect(requests).toBe(0);
 });
 

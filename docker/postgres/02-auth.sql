@@ -1,7 +1,7 @@
 -- Better Auth tables. Generated with: pnpm exec auth generate --config lib/auth.ts --output docker/postgres/02-auth.sql
--- (needs an empty database). Regenerate after adding Better Auth plugins that bring their own tables.
+-- (needs an empty database). Regenerate after adding Better Auth plugins or user fields (lib/auth.ts).
 
-create table "user" ("id" text not null primary key, "name" text not null, "email" text not null unique, "emailVerified" boolean not null, "image" text, "createdAt" timestamptz default CURRENT_TIMESTAMP not null, "updatedAt" timestamptz default CURRENT_TIMESTAMP not null);
+create table "user" ("id" text not null primary key, "name" text not null, "email" text not null unique, "emailVerified" boolean not null, "image" text, "createdAt" timestamptz default CURRENT_TIMESTAMP not null, "updatedAt" timestamptz default CURRENT_TIMESTAMP not null, "role" text not null);
 
 create table "session" ("id" text not null primary key, "expiresAt" timestamptz not null, "token" text not null unique, "createdAt" timestamptz default CURRENT_TIMESTAMP not null, "updatedAt" timestamptz not null, "ipAddress" text, "userAgent" text, "userId" text not null references "user" ("id") on delete cascade);
 

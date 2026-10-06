@@ -29,12 +29,16 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 export const systemPrice = (systemSizeKw: number) => round2(systemSizeKw * PRICE_PER_KW);
 
 // NOTE: Random limit for monthlyConsumptionKwh, based on biggest house being ~1000kWh. so just 100x
-const kwhMessage = "Enter a number above 0 (max 100000).";
+const kwhMessage = "Enter a number above 0 (max 100000), with at most 2 decimals.";
 const kwMessage = "Enter a size from 1 to 1000 kW, with at most 2 decimals.";
 const downMessage = "Enter 0 or more, with at most 2 decimals (cents).";
 
 const numbers = {
-	monthlyConsumptionKwh: z.number({ error: kwhMessage }).positive(kwhMessage).max(100000, kwhMessage),
+	monthlyConsumptionKwh: z
+		.number({ error: kwhMessage })
+		.positive(kwhMessage)
+		.max(100000, kwhMessage)
+		.multipleOf(0.01, kwhMessage),
 	systemSizeKw: z.number({ error: kwMessage }).min(1, kwMessage).max(1000, kwMessage).multipleOf(0.01, kwMessage),
 	downPayment: z.number({ error: downMessage }).min(0, downMessage).multipleOf(0.01, downMessage),
 };

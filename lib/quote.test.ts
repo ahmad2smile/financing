@@ -43,7 +43,7 @@ it("quote price, principal and offers", () => {
 	expect(quote.offers.every((o) => o.principalUsed === 4999.5 && o.apr === 8.9)).toBe(true);
 });
 
-const kwhErr = "Enter a number above 0 (max 100000).";
+const kwhErr = "Enter a number above 0 (max 100000), with at most 2 decimals.";
 const kwErr = "Enter a size from 1 to 1000 kW, with at most 2 decimals.";
 const downPaymentErr = "Enter 0 or more, with at most 2 decimals (cents).";
 const belowPriceErr = "Down payment must be less than the system price.";
@@ -57,6 +57,8 @@ it.each<Row>([
 	["required address", { address: " " }, { address: "Enter your address." }],
 	["zero kWh", { monthlyConsumptionKwh: "0" }, { monthlyConsumptionKwh: kwhErr }],
 	["kWh above max", { monthlyConsumptionKwh: "100001" }, { monthlyConsumptionKwh: kwhErr }],
+	["kWh with 2 decimals", { monthlyConsumptionKwh: "0.01" }, {}],
+	["kWh with 3 decimals", { monthlyConsumptionKwh: "500.125" }, { monthlyConsumptionKwh: kwhErr }],
 	["size below 1 kW", { systemSizeKw: "0.99" }, { systemSizeKw: kwErr }],
 	["size at 1 kW", { systemSizeKw: "1" }, {}],
 	["size with 3 decimals", { systemSizeKw: "1.555" }, { systemSizeKw: kwErr }],
@@ -87,6 +89,11 @@ it("down payment check uses the same rounded price as the quote", () => {
 	expect(
 		computeQuote(validate({ ...api, systemSizeKw: 2.22, downPayment: 2663.99 }, owner).input!).offers[0].principalUsed,
 	).toBe(0.01);
+});
+
+it("API refuses kWh with more than 2 decimals, so the database never rounds it", () => {
+	expect(validate({ ...api, monthlyConsumptionKwh: 500.125 }, owner).errors).toEqual({ monthlyConsumptionKwh: kwhErr });
+	expect(validate({ ...api, monthlyConsumptionKwh: 500.12 }, owner).errors).toEqual({});
 });
 
 it("name and email come from the owner, not the body", () => {

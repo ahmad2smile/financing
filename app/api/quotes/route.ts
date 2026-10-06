@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { computeQuote, validate } from "@/lib/quote";
+import { saveQuote } from "@/data/quote-store";
 
 export async function POST(request: Request) {
 	const session = await auth.api.getSession({ headers: request.headers });
@@ -23,5 +24,13 @@ export async function POST(request: Request) {
 		return Response.json({ errors }, { status: 422 });
 	}
 
-	return Response.json(computeQuote(input));
+	// The user still gets their offers if saving fails. The failure is logged with the full quote so it can be recovered.
+	const quote = computeQuote(input);
+	try {
+		await saveQuote(session.user.id, input, quote);
+	} catch (error) {
+		console.error(`POST /api/quotes could not save the quote of user ${session.user.id}`, { input, quote }, error);
+	}
+
+	return Response.json(quote);
 }
