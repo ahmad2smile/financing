@@ -41,6 +41,9 @@ export const auth = betterAuth({
 						// Keycloak is the one source of truth: copy name and email again on every sign in
 						overrideUserInfo: true,
 					}),
+					// The server may reach Keycloak at another address than the browser does (keycloak:8080 in Docker).
+					// Keycloak answers there with its token and key URLs on that address, and the public issuer.
+					discoveryUrl: `${process.env.KEYCLOAK_INTERNAL_URL || process.env.KEYCLOAK_ISSUER}/.well-known/openid-configuration`,
 					// The quote form shows this as "Full name". The realm requires both parts
 					// (docker/keycloak/financing-realm.json), so a missing one is a broken setup: fail the sign in.
 					mapProfileToUser: ({ given_name, family_name }) => {

@@ -2,14 +2,14 @@ import { createRemoteJWKSet, errors, jwtVerify, type JWTVerifyGetKey } from "jos
 
 const LOGOUT_EVENT = "http://schemas.openid.net/event/backchannel-logout";
 
-// Keycloak's signing keys, made on first use so importing this needs no env.
+// Keycloak's signing keys, made on first use so importing this needs no env. From the address this server reaches
+// Keycloak on, like lib/auth.ts. The issuer they are checked against stays the public one.
 // jose caches them and fetches again when a token has a new key id.
 let remoteKeys: JWTVerifyGetKey | undefined;
 const keycloakKeys: JWTVerifyGetKey = (header, token) =>
-	(remoteKeys ??= createRemoteJWKSet(new URL(`${process.env.KEYCLOAK_ISSUER}/protocol/openid-connect/certs`)))(
-		header,
-		token,
-	);
+	(remoteKeys ??= createRemoteJWKSet(
+		new URL(`${process.env.KEYCLOAK_INTERNAL_URL || process.env.KEYCLOAK_ISSUER}/protocol/openid-connect/certs`),
+	))(header, token);
 
 // Checks a logout_token as OIDC Back-Channel Logout 1.0 (section 2.6) asks, and returns the Keycloak user id.
 // Throws: a bad token gives a JOSEError, see isBadToken. Not getting Keycloak's keys gives anything else.

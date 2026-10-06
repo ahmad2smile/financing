@@ -16,6 +16,17 @@ pnpm dev                 # http://localhost:3000, must be this port: Keycloak ca
 - `NEXT_PUBLIC_PRICE_PER_KW` in `.env` sets the price of 1 kW for the app and the Postgres money limit. It is read at build time and when the Postgres volume is created.
 - Postgres runs `docker/postgres/*.sql` and Keycloak imports the realm only on first start. After changing them (or the price), reset with `docker compose down -v && docker compose up -d`.
 
+### Docker
+
+`Dockerfile` builds a production image (`output: "standalone"`), with a healthcheck on `/api/health`.
+
+```bash
+docker compose --profile app up -d --build   # app on :3000 next to Postgres and Keycloak, stop `pnpm dev` first
+docker compose ps                            # app shows (healthy) once Postgres answers
+```
+
+The browser reaches Keycloak at `KEYCLOAK_ISSUER` (`localhost:8080`), the container at `KEYCLOAK_INTERNAL_URL` (`keycloak:8080`). Keycloak (`KC_HOSTNAME_BACKCHANNEL_DYNAMIC`) answers the container with token and key URLs on `keycloak:8080` and the public issuer, so tokens match either way.
+
 ## Pages
 
 - `/` quote form. Signed-out visitors are sent through Keycloak sign in first.

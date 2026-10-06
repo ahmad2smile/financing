@@ -32,6 +32,10 @@ services:
       KC_DB_USERNAME: keycloak
       KC_DB_PASSWORD: keycloak
       KC_HEALTH_ENABLED: "true"
+      # Browsers reach Keycloak on localhost:8080, the app container on keycloak:8080. Tokens always name
+      # localhost:8080 as issuer, and a call to keycloak:8080 gets token and key URLs on keycloak:8080.
+      KC_HOSTNAME: http://localhost:8080
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
     ports:
       - "8080:8080"
     # Back-channel logout calls the app on the host. Docker Desktop has this name already, Linux needs it.
@@ -53,6 +57,28 @@ services:
       interval: 5s
       timeout: 5s
       retries: 40
+
+  # The app as a production build (Dockerfile). Only with: docker compose --profile app up -d --build
+  # It takes port 3000 like `pnpm dev`, so run one or the other.
+  app:
+    profiles: [app]
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_PRICE_PER_KW: ${NEXT_PUBLIC_PRICE_PER_KW:?Error! Set NEXT_PUBLIC_PRICE_PER_KW in .env}
+    env_file: .env
+    environment:
+      # Inside the compose network Postgres is "postgres", not localhost
+      DATABASE_URL: postgres://financing:financing@postgres:5432/financing
+      # Browsers still use KEYCLOAK_ISSUER (localhost:8080), the server calls Keycloak here
+      KEYCLOAK_INTERNAL_URL: http://keycloak:8080/realms/financing
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
 
 volumes:
   postgres-data:
