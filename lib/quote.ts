@@ -53,7 +53,13 @@ const numbers = {
 };
 
 // Name and email are not here: they come from the signed-in user, never from what the client sends
-const address = z.string().trim().min(1, "Enter your address.").max(500, "Address is too long.");
+// Postgres text can't hold a NUL byte, so it would refuse the quote
+const address = z
+	.string()
+	.trim()
+	.min(1, "Enter your address.")
+	.max(500, "Address is too long.")
+	.refine((text) => !text.includes("\u0000"), "Address has a character that is not allowed.");
 
 // Runs only when both fields are valid, so an empty or bad size never blames the down payment.
 // An empty path means the whole body is not an object.

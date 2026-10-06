@@ -205,6 +205,16 @@ test("API retries with one request id, also at the same time, save once", async 
 	expect(await savedRequestIds(body.address)).toEqual([body.requestId]);
 });
 
+test("API refuses an address with a NUL byte instead of answering with a quote it can't save", async ({ page }) => {
+	const address = `${Date.now()} Nul\u0000 St`;
+	const response = await page.request.post("/api/quotes", {
+		data: { requestId: crypto.randomUUID(), address, monthlyConsumptionKwh: 500, systemSizeKw: 10 },
+	});
+
+	expect(response.status()).toBe(422);
+	expect(await response.json()).toEqual({ errors: { address: "Address has a character that is not allowed." } });
+});
+
 test("down payment with thousands commas is used, not dropped", async ({ page }) => {
 	await fill(page, { "Down payment (USD, optional)": "5,000" });
 	await submit(page);

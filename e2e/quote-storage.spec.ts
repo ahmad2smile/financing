@@ -186,6 +186,31 @@ test("band is saved as a number from 0 to 99", async () => {
 	});
 });
 
+// app/api/quotes/route.ts answers 422 for these codes, so they must be the ones Postgres really sends.
+// Values go as parameters, the same way data/quote-store.ts sends them.
+test("bad data is refused with a data error (class 22) or a check error (23514)", async () => {
+	const codeOf = async (address: string, band: number) => {
+		const client = await db.connect();
+		try {
+			await client.query("BEGIN");
+			await actAs(client, users.ann);
+			await client.query(
+				`INSERT INTO quote (request_id, address, monthly_consumption_kwh, system_size_kw, down_payment, system_price, principal, band)
+				 VALUES (gen_random_uuid(), $1, 500, 5, 0, 6000, 6000, $2)`,
+				[address, band],
+			);
+		} catch (error) {
+			return (error as { code?: string }).code;
+		} finally {
+			await client.query("ROLLBACK");
+			client.release();
+		}
+	};
+
+	expect(await codeOf("1 Main\u0000 St", 1)).toBe("22021");
+	expect(await codeOf("1 Main St", 100)).toBe("23514");
+});
+
 test("a request id is unique per user, so two users never block each other", async () => {
 	await inRolledBackTransaction(async (client) => {
 		const withId = () =>

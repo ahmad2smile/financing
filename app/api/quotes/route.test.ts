@@ -1,3 +1,4 @@
+import { DatabaseError } from "pg";
 import { auth } from "@/lib/auth";
 import { saveQuote } from "@/data/quote-store";
 import { POST } from "./route";
@@ -69,5 +70,32 @@ it("save failure still answers with the computed quote and logs it", async () =>
 
 	expect(response.status).toBe(200);
 	expect(await response.json()).toMatchObject({ systemPrice: 6000, band: "B" });
+	expect(console.error).toHaveBeenCalledTimes(1);
+});
+
+// Same error pg throws for data Postgres refuses: 22021 is a NUL byte in text, 23514 a failed check
+const refused = (code: string) => Object.assign(new DatabaseError("refused", 0, "error"), { code });
+
+it.each(["22021", "23514"])(
+	"save refused by Postgres as bad data (%s) gives 422, not a quote that was never saved",
+	async (code) => {
+		save.mockRejectedValue(refused(code));
+
+		const response = await post(JSON.stringify(valid));
+
+		expect(response.status).toBe(422);
+		expect(await response.json()).toEqual({
+			errors: { form: "These details can't be saved. Check them and try again." },
+		});
+		expect(console.warn).toHaveBeenCalledTimes(1);
+	},
+);
+
+it("save failing for another Postgres reason still answers with the quote", async () => {
+	save.mockRejectedValue(refused("57P01"));
+
+	const response = await post(JSON.stringify(valid));
+
+	expect(response.status).toBe(200);
 	expect(console.error).toHaveBeenCalledTimes(1);
 });

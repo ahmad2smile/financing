@@ -124,7 +124,7 @@ it.each([undefined, "", "abc", "0", "-5", "12.345"])("refuses to load with price
 	else process.env.NEXT_PUBLIC_PRICE_PER_KW = price;
 
 	try {
-		await expect(jest.isolateModulesAsync(() => import("./quote"))).rejects.toThrow(
+		await expect(jest.isolateModulesAsync(async () => void (await import("./quote")))).rejects.toThrow(
 			/NEXT_PUBLIC_PRICE_PER_KW must be a price/,
 		);
 	} finally {
