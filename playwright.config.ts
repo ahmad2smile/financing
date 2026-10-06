@@ -39,6 +39,8 @@ export default defineConfig({
 				BETTER_AUTH_URL: `http://localhost:${port}`,
 				KEYCLOAK_CLIENT_ID: "financing-web-e2e",
 				KEYCLOAK_CLIENT_SECRET: "financing-e2e-secret",
+				// Tests expect prices at 1200 per kW. The second server reuses this build, so it has the same price.
+				NEXT_PUBLIC_PRICE_PER_KW: "1200",
 			},
 			url: `http://localhost:${port}`,
 			reuseExistingServer: !process.env.CI,

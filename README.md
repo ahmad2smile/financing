@@ -15,6 +15,8 @@ pnpm dev                 # http://localhost:3000, must be this port: Keycloak ca
 - Keycloak admin: http://localhost:8080, `admin` / `admin`. Realm `financing` from `docker/keycloak/financing-realm.json`.
 - Seeded users: `admin@test.com` / `admin`, `user@test.com` / `user`. Sign up is open.
 
+`NEXT_PUBLIC_PRICE_PER_KW` in `.env` sets the price of 1 kW for the app and the Postgres money limit. It is fixed at build time and when the Postgres volume is created, so after a change rebuild and reset.
+
 Postgres runs `docker/postgres/*.sql` and Keycloak imports the realm only on first start. After changing them, reset with `docker compose down -v && docker compose up -d`.
 
 ## Auth
@@ -30,7 +32,7 @@ Better Auth with Keycloak (`lib/auth.ts`), sessions in Postgres.
 
 Schema in `docker/postgres/*.sql`. Every quote is saved in `quote` with its offers in `quote_offer`, and is never changed or deleted.
 
-- Money columns use the `amount` type: `numeric(12, 2)`, so whole cents only, from 0 to 1,200,000,000 (1000x the biggest possible price).
+- Money columns use the `amount` type: `numeric(12, 2)`, so whole cents only, from 0 to 1000x the biggest possible price (1000 kW x `NEXT_PUBLIC_PRICE_PER_KW`).
 - Row level security: a user sees only their own quotes, an admin sees all. Nobody can add a quote for someone else.
 - The app connects as `financing`. `superuser` only runs the setup scripts: the app must never connect as it, because it skips row level security. For each save it sets `app.user_id` for that transaction only (`data/quote-store.ts`).
 - The app refuses to start, and refuses every new connection, if its role is a superuser or has `bypassrls` (`data/db.ts`, `instrumentation.ts`).

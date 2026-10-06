@@ -2,7 +2,16 @@ import { z } from "zod";
 
 export const bandSchema = z.enum(["A", "B", "C"]);
 
-export const PRICE_PER_KW = 1200;
+// From .env. NEXT_PUBLIC_ so the form's down payment check uses it too: it is fixed into both bundles at build time.
+// Postgres reads the same value for its money limit (docker-compose.yml, docker/postgres/03-quotes.sql).
+// Written out in full, not process.env[name], or Next can't fix it into the client bundle.
+export const PRICE_PER_KW = z.coerce
+	.number()
+	.positive()
+	.multipleOf(0.01)
+	.parse(process.env.NEXT_PUBLIC_PRICE_PER_KW, {
+		error: () => "NEXT_PUBLIC_PRICE_PER_KW must be a price above 0 with at most 2 decimals. Set it in .env",
+	});
 export const TERMS = [5, 10, 15];
 export const APR_BY_BAND: Record<z.infer<typeof bandSchema>, number> = { A: 6.9, B: 8.9, C: 11.9 };
 

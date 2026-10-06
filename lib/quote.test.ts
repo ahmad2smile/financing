@@ -117,3 +117,17 @@ it("API needs a request id, so a retry can be matched to the quote it repeats", 
 	expect(validate({ ...api, requestId: "not-a-uuid" }, owner).errors).toEqual({ requestId: idErr });
 	expect(validate(api, owner).input?.requestId).toBe(api.requestId);
 });
+
+it.each([undefined, "", "abc", "0", "-5", "12.345"])("refuses to load with price per kW %p", async (price) => {
+	const saved = process.env.NEXT_PUBLIC_PRICE_PER_KW;
+	if (price === undefined) delete process.env.NEXT_PUBLIC_PRICE_PER_KW;
+	else process.env.NEXT_PUBLIC_PRICE_PER_KW = price;
+
+	try {
+		await expect(jest.isolateModulesAsync(() => import("./quote"))).rejects.toThrow(
+			/NEXT_PUBLIC_PRICE_PER_KW must be a price/,
+		);
+	} finally {
+		process.env.NEXT_PUBLIC_PRICE_PER_KW = saved;
+	}
+});

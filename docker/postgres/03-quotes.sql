@@ -6,9 +6,11 @@ create role financing with login password 'financing' nosuperuser nobypassrls;
 grant usage on schema public to financing;
 grant select, insert, update, delete on "user", "session", "account", "verification" to financing;
 
--- Money: whole cents only, from 0 to 1,200,000,000
--- NOTE: Limit based on biggest system price being 1,200,000 (1000 kW x PRICE_PER_KW 1200 in lib/quote.ts). so 1000x, leaves room for price changes
-create domain amount as numeric(12, 2) check (value between 0 and 1200000000);
+-- Money: whole cents only, from 0 up to 1000x the biggest system price (1000 kW x PRICE_PER_KW), so price changes fit.
+-- PRICE_PER_KW comes from .env through docker-compose.yml, the same value as lib/quote.ts. Set once, when the volume is created.
+-- :'price_per_kw' is quoted as text and cast, so a bad value fails the setup instead of running as SQL.
+\getenv price_per_kw PRICE_PER_KW
+create domain amount as numeric(12, 2) check (value between 0 and 1000 * 1000 * :'price_per_kw'::numeric);
 
 -- Who is asking. data/quote-store.ts sets it for one transaction. Unset means nobody, so no rows.
 create function app_user_id() returns text language sql stable as $$

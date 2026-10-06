@@ -7,6 +7,8 @@ services:
       POSTGRES_USER: superuser
       POSTGRES_PASSWORD: superuser
       POSTGRES_DB: financing
+      # Read by docker/postgres/03-quotes.sql. Same value the app uses (lib/quote.ts).
+      PRICE_PER_KW: ${NEXT_PUBLIC_PRICE_PER_KW:?Error! Set NEXT_PUBLIC_PRICE_PER_KW in .env}
     ports:
       - "5432:5432"
     volumes:

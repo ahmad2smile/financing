@@ -132,12 +132,16 @@ test("saved quotes can not be changed or deleted, even by their owner", async ()
 	});
 });
 
-test("money is kept to the cent, from 0 up to 1.2 billion", async () => {
+test("money is kept to the cent, from 0 up to 1000x the biggest system price", async () => {
+	// Postgres got its limit from the same .env value when its volume was created (docker/postgres/03-quotes.sql)
+	const max = (1000 * 1000 * Number(process.env.NEXT_PUBLIC_PRICE_PER_KW)).toFixed(2);
+	const overMax = (Number(max) + 0.01).toFixed(2);
+
 	await inRolledBackTransaction(async (client) => {
 		await actAs(client, users.ann);
 
-		const top = await addQuote(client, { down: "0", price: "1200000000", principal: "1200000000" });
-		expect([top.down_payment, top.system_price, top.principal]).toEqual(["0.00", "1200000000.00", "1200000000.00"]);
+		const top = await addQuote(client, { down: "0", price: max, principal: max });
+		expect([top.down_payment, top.system_price, top.principal]).toEqual(["0.00", max, max]);
 
 		const cent = await addQuote(client, { down: "0.01", price: "0.02", principal: "0.01" });
 		expect([cent.down_payment, cent.system_price, cent.principal]).toEqual(["0.01", "0.02", "0.01"]);
@@ -146,7 +150,7 @@ test("money is kept to the cent, from 0 up to 1.2 billion", async () => {
 		const rounded = await addQuote(client, { down: "0.004", price: "10.005", principal: "10.01" });
 		expect([rounded.down_payment, rounded.system_price]).toEqual(["0.00", "10.01"]);
 
-		const tooBig = { down: "0", price: "1200000000.01", principal: "1200000000.01" };
+		const tooBig = { down: "0", price: overMax, principal: overMax };
 		expect(await errorOf(client, () => addQuote(client, tooBig))).toMatch(/domain amount/);
 		expect(await errorOf(client, () => addQuote(client, { down: "-0.01", principal: "6000.01" }))).toMatch(
 			/domain amount/,
