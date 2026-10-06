@@ -38,6 +38,7 @@ Schema in `docker/postgres/*.sql`. Every quote is saved in `quote` with its offe
 
 - Money columns use the `amount` type: `numeric(12, 2)`, so whole cents only, from 0 to 1000x the biggest possible price (1000 kW x `NEXT_PUBLIC_PRICE_PER_KW`).
 - Row level security: a user sees only their own quotes, an admin sees all. Nobody can add a quote for someone else.
+- `docker/postgres/04-seed.sql` seeds the two test users with their accounts and quotes. Each account links to Keycloak by user id, so the realm file pins those ids. Regenerate it from a running database with `pg_dump --data-only --column-inserts -t '"user"' -t quote -t quote_offer`, plus the account rows without tokens.
 - The app connects as `financing`. `superuser` only runs the setup scripts: the app must never connect as it, because it skips row level security. For each save it sets `app.user_id` for that transaction only (`data/quote-store.ts`).
 - The app refuses to start, and refuses every new connection, if its role is a superuser or has `bypassrls` (`data/db.ts`, `instrumentation.ts`).
 

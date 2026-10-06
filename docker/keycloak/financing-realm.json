@@ -88,6 +88,7 @@
 	],
 	"users": [
 		{
+			"id": "6a58b1c6-ebfc-418d-969f-33ff1557d70e",
 			"username": "admin@test.com",
 			"email": "admin@test.com",
 			"emailVerified": true,
@@ -104,6 +105,7 @@
 			]
 		},
 		{
+			"id": "a728c3be-6b5f-4c71-b2bb-7e912994e5ea",
 			"username": "user@test.com",
 			"email": "user@test.com",
 			"emailVerified": true,
