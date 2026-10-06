@@ -1,36 +1,42 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Solar financing calculator
 
-## Getting Started
+Enter your details and get a system price, a risk band and three installment offers (5, 10 and 15 years).
 
-First, run the development server:
+## Run
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
+pnpm dev                 # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Scripts
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Script                         | What it does                                         |
+| ------------------------------ | ---------------------------------------------------- |
+| `pnpm test`                    | Jest unit and API route tests                        |
+| `pnpm test:e2e:install`        | One-time Chromium download into `node_modules`       |
+| `pnpm test:e2e`                | Playwright browser tests (builds and starts the app) |
+| `pnpm lint`                    | ESLint                                               |
+| `pnpm format` / `format:check` | Prettier write / check                               |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## API
 
-## Learn More
+`POST /api/quotes` with a JSON body. Numbers must be JSON numbers, not strings.
 
-To learn more about Next.js, take a look at the following resources:
+| Field                   | Rule                                              |
+| ----------------------- | ------------------------------------------------- |
+| `fullName`, `address`   | Non-empty text                                    |
+| `email`                 | Valid email                                       |
+| `monthlyConsumptionKwh` | Above 0, max 100000                               |
+| `systemSizeKw`          | 1 to 1000, at most 2 decimals                     |
+| `downPayment`           | Optional (default 0), cents only, below the price |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Price is `systemSizeKw * 1200`, rounded to cents.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Responses:
 
-## Deploy on Vercel
+- `200` `{ systemPrice, band, offers: [{ termYears, apr, principalUsed, monthlyPayment }] }`
+- `400` body is not JSON: `{ errors: { form } }`
+- `422` invalid input: `{ errors: { <field>, form? } }`. `form` holds errors for the whole request.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+All rules live in `lib/quote.ts`. The form uses react-hook-form with `formSchema`, which applies the same rules to the typed text (digits, optional thousands commas, optional decimals).
