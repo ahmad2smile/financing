@@ -111,6 +111,100 @@ test("submitted quote is saved with its offers, owned by the signed-in user", as
 	}
 });
 
+// Counts this user's saved quotes with this address, and reads their request ids
+async function savedRequestIds(address: string) {
+	const client = await db.connect();
+	try {
+		await client.query("BEGIN");
+		await client.query(`SELECT set_config('app.user_id', id, true) FROM "user" WHERE email = $1`, [testUser.email]);
+		const { rows } = await client.query(`SELECT request_id FROM quote WHERE address = $1`, [address]);
+		return rows.map((r) => r.request_id);
+	} finally {
+		await client.query("ROLLBACK");
+		client.release();
+	}
+}
+
+test("resubmit after a lost answer sends the same request id and saves the quote once", async ({ page }) => {
+	const address = `${Date.now()} Lost Answer St`;
+	const sent: string[] = [];
+	// The first try reaches the server and is saved, but its answer never reaches the page
+	let lose = true;
+	await page.route("/api/quotes", async (route) => {
+		sent.push(route.request().postDataJSON().requestId);
+		if (!lose) return route.continue();
+		lose = false;
+		await route.fetch();
+		await route.abort();
+	});
+
+	await fill(page, { Address: address });
+	await submit(page);
+	await expect(alert(page)).toHaveText("Could not reach the server. Please try again.");
+
+	await submit(page);
+	await expect(results(page)).toContainText("$12,000.00");
+
+	expect(sent).toHaveLength(2);
+	expect(sent[1]).toBe(sent[0]);
+	expect(await savedRequestIds(address)).toEqual([sent[0]]);
+});
+
+test("editing the form sends a new request id, so the edited quote is saved too", async ({ page }) => {
+	const address = `${Date.now()} Edited St`;
+	const sent: string[] = [];
+	await page.route("/api/quotes", (route) => (sent.push(route.request().postDataJSON().requestId), route.continue()));
+
+	await fill(page, { Address: address });
+	await submit(page);
+	await expect(results(page)).toContainText("$12,000.00");
+
+	await page.getByLabel("System size (kW)").fill("5");
+	await submit(page);
+	await expect(results(page)).toContainText("$6,000.00");
+
+	expect(sent).toHaveLength(2);
+	expect(sent[1]).not.toBe(sent[0]);
+	expect((await savedRequestIds(address)).sort()).toEqual([...sent].sort());
+});
+
+test("same inputs after a page reload send a new request id, so a new quote is saved", async ({ page }) => {
+	const address = `${Date.now()} Reload St`;
+	const sent: string[] = [];
+	await page.route("/api/quotes", (route) => (sent.push(route.request().postDataJSON().requestId), route.continue()));
+
+	for (let load = 1; load <= 2; load++) {
+		await page.goto("/quotes");
+		await fill(page, { Address: address });
+		await submit(page);
+		await expect(results(page)).toContainText("$12,000.00");
+	}
+
+	expect(sent).toHaveLength(2);
+	expect(sent[1]).not.toBe(sent[0]);
+	expect((await savedRequestIds(address)).sort()).toEqual([...sent].sort());
+});
+
+test("API retries with one request id, also at the same time, save once", async ({ page }) => {
+	const body = {
+		requestId: crypto.randomUUID(),
+		address: `${Date.now()} Retry St`,
+		monthlyConsumptionKwh: 500,
+		systemSizeKw: 10,
+	};
+	const post = (data: object) => page.request.post("/api/quotes", { data });
+
+	const first = await post(body);
+	const retries = await Promise.all([post(body), post(body), post(body)]);
+	expect(first.status()).toBe(200);
+	for (const retry of retries) {
+		expect(retry.status()).toBe(200);
+		expect(await retry.json()).toEqual(await first.json());
+	}
+
+	expect(await savedRequestIds(body.address)).toEqual([body.requestId]);
+});
+
 test("down payment with thousands commas is used, not dropped", async ({ page }) => {
 	await fill(page, { "Down payment (USD, optional)": "5,000" });
 	await submit(page);

@@ -26,6 +26,8 @@ $$;
 create table quote (
 	id uuid primary key default uuidv7(),
 	user_id text not null default app_user_id() references "user" (id),
+	-- Sent by the client, the same on every retry of one quote. A retry finds the saved quote instead of adding a second one.
+	request_id uuid not null,
 	address text not null check (length(address) between 1 and 500),
 	monthly_consumption_kwh numeric(8, 2) not null check (monthly_consumption_kwh > 0 and monthly_consumption_kwh <= 100000),
 	system_size_kw numeric(6, 2) not null check (system_size_kw between 1 and 1000),
@@ -35,7 +37,8 @@ create table quote (
 	-- NOTE: A number, not a letter, so new bands need no data migration. data/quote-store.ts maps letters to numbers.
 	band smallint not null check (band between 0 and 99),
 	created_at timestamptz not null default now(),
-	constraint quote_principal_check check (principal > 0 and principal = system_price - down_payment)
+	constraint quote_principal_check check (principal > 0 and principal = system_price - down_payment),
+	constraint quote_request_id_key unique (user_id, request_id)
 );
 
 create index quote_user_id_created_at_idx on quote (user_id, created_at desc);

@@ -31,8 +31,8 @@ const actAs = (client: PoolClient, userId: string | null) =>
 const addQuote = async (client: PoolClient, money: { down?: string; price?: string; principal?: string } = {}) => {
 	const { down = "1000.00", price = "6000.00", principal = "5000.00" } = money;
 	const { rows } = await client.query(
-		`INSERT INTO quote (address, monthly_consumption_kwh, system_size_kw, down_payment, system_price, principal, band)
-		 VALUES ('1 Main St', 500, 5, $1, $2, $3, 1) RETURNING id, user_id, down_payment, system_price, principal`,
+		`INSERT INTO quote (request_id, address, monthly_consumption_kwh, system_size_kw, down_payment, system_price, principal, band)
+		 VALUES (gen_random_uuid(), '1 Main St', 500, 5, $1, $2, $3, 1) RETURNING id, user_id, down_payment, system_price, principal`,
 		[down, price, principal],
 	);
 	await client.query(
@@ -102,8 +102,8 @@ test("nobody adds a quote or offer for someone else, not even an admin", async (
 		const bobs = await addQuote(client);
 		const forBob = () =>
 			client.query(
-				`INSERT INTO quote (user_id, address, monthly_consumption_kwh, system_size_kw, down_payment, system_price, principal, band)
-				 VALUES ($1, '1 Main St', 500, 5, 0, 6000, 6000, 1)`,
+				`INSERT INTO quote (request_id, user_id, address, monthly_consumption_kwh, system_size_kw, down_payment, system_price, principal, band)
+				 VALUES (gen_random_uuid(), $1, '1 Main St', 500, 5, 0, 6000, 6000, 1)`,
 				[users.bob],
 			);
 		const offerOnBobs = () =>
@@ -170,8 +170,8 @@ test("band is saved as a number from 0 to 99", async () => {
 		await actAs(client, users.ann);
 		const withBand = (band: number) =>
 			client.query(
-				`INSERT INTO quote (address, monthly_consumption_kwh, system_size_kw, down_payment, system_price, principal, band)
-				 VALUES ('1 Main St', 500, 5, 0, 6000, 6000, $1) RETURNING band`,
+				`INSERT INTO quote (request_id, address, monthly_consumption_kwh, system_size_kw, down_payment, system_price, principal, band)
+				 VALUES (gen_random_uuid(), '1 Main St', 500, 5, 0, 6000, 6000, $1) RETURNING band`,
 				[band],
 			);
 
@@ -179,5 +179,22 @@ test("band is saved as a number from 0 to 99", async () => {
 		expect((await withBand(99)).rows[0].band).toBe(99);
 		expect(await errorOf(client, () => withBand(100))).toMatch(/quote_band_check/);
 		expect(await errorOf(client, () => withBand(-1))).toMatch(/quote_band_check/);
+	});
+});
+
+test("a request id is unique per user, so two users never block each other", async () => {
+	await inRolledBackTransaction(async (client) => {
+		const withId = () =>
+			client.query(
+				`INSERT INTO quote (request_id, address, monthly_consumption_kwh, system_size_kw, down_payment, system_price, principal, band)
+				 VALUES ('0199a1b2-0000-7000-8000-0000000000aa', '1 Main St', 500, 5, 0, 6000, 6000, 1)`,
+			);
+
+		await actAs(client, users.ann);
+		await withId();
+		expect(await errorOf(client, withId)).toMatch(/quote_request_id_key/);
+
+		await actAs(client, users.bob);
+		expect(await errorOf(client, withId)).toBeUndefined();
 	});
 });

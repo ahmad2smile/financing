@@ -17,7 +17,13 @@ const form = {
 	downPayment: "",
 };
 
-const api = { ...form, monthlyConsumptionKwh: 500, systemSizeKw: 5, downPayment: 0 };
+const api = {
+	...form,
+	requestId: "0199a1b2-0000-7000-8000-000000000001",
+	monthlyConsumptionKwh: 500,
+	systemSizeKw: 5,
+	downPayment: 0,
+};
 const owner = { fullName: "Jane Doe", email: "jane@test.com" };
 
 it("risk bands", () => {
@@ -101,4 +107,13 @@ it("name and email come from the owner, not the body", () => {
 
 	expect(errors).toEqual({});
 	expect(input).toMatchObject(owner);
+});
+
+it("API needs a request id, so a retry can be matched to the quote it repeats", () => {
+	const withoutId = { ...api, requestId: undefined };
+	const idErr = "Missing request id. Reload the page and try again.";
+
+	expect(validate(withoutId, owner).errors).toEqual({ requestId: idErr });
+	expect(validate({ ...api, requestId: "not-a-uuid" }, owner).errors).toEqual({ requestId: idErr });
+	expect(validate(api, owner).input?.requestId).toBe(api.requestId);
 });

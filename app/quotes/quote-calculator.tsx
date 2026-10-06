@@ -3,12 +3,13 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
+import { v5 as uuidv5 } from "uuid";
 import { z } from "zod";
 import {
 	formSchema,
 	quoteResultSchema,
 	type Quote,
-	type QuoteBody,
+	type QuoteFields,
 	type QuoteFormValues,
 	type QuoteOwner,
 } from "@/lib/quote";
@@ -38,19 +39,22 @@ export default function QuoteCalculator({ owner }: { owner: QuoteOwner }) {
 		handleSubmit,
 		setError,
 		formState: { errors, isSubmitting },
-	} = useForm<QuoteFormValues, unknown, QuoteBody>({ resolver: zodResolver(formSchema), defaultValues: emptyForm });
+	} = useForm<QuoteFormValues, unknown, QuoteFields>({ resolver: zodResolver(formSchema), defaultValues: emptyForm });
 	const [quote, setQuote] = useState<Quote | null>(null);
 	const [stale, setStale] = useState(false);
+	// Made once per page load. Request ids are UUID v5 of the inputs in this namespace: same inputs on the same page
+	// give the same id, so a resubmit (like a retry after a network failure) saves nothing new. A reload gives new ids.
+	const [namespace] = useState(() => crypto.randomUUID());
 
 	// Root errors are cleared by react-hook-form on every submit
 	const fail = (message: string) => setError("root.server", { message });
 
-	async function onSubmit(input: QuoteBody) {
+	async function onSubmit(fields: QuoteFields) {
 		try {
 			const response = await fetch("/api/quotes", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(input),
+				body: JSON.stringify({ ...fields, requestId: uuidv5(JSON.stringify(fields), namespace) }),
 			});
 			const body: unknown = await response.json().catch(() => undefined);
 

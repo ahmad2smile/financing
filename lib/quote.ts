@@ -59,8 +59,14 @@ const priceCheck = {
 const belowPrice = (q: { systemSizeKw: number; downPayment: number }) => q.downPayment < systemPrice(q.systemSizeKw);
 
 // API: real JSON numbers only. A missing down payment means none. Unknown keys (fullName, email) are dropped.
+// requestId: made by the client, the same on every retry of one quote, so a retry never saves it twice (data/quote-store.ts).
 const apiSchema = z
-	.object({ address, ...numbers, downPayment: numbers.downPayment.default(0) })
+	.object({
+		requestId: z.uuid("Missing request id. Reload the page and try again."),
+		address,
+		...numbers,
+		downPayment: numbers.downPayment.default(0),
+	})
 	.refine(belowPrice, priceCheck);
 
 // Form (react-hook-form resolver): the exact text the user typed. Digits, optional thousands commas, optional decimals.
@@ -92,6 +98,7 @@ export type QuoteBody = z.infer<typeof apiSchema>;
 export type QuoteOwner = { fullName: string; email: string };
 export type QuoteInput = QuoteBody & QuoteOwner;
 export type QuoteFormValues = z.input<typeof formSchema>;
+export type QuoteFields = z.output<typeof formSchema>;
 // "form" holds errors that belong to the whole request, not one field
 export type FieldErrors = Partial<Record<keyof QuoteBody | "form", string>>;
 
@@ -123,7 +130,7 @@ export function monthlyPayment(principal: number, aprPercent: number, termYears:
 	return round2((principal * r) / (1 - Math.pow(1 + r, -n)));
 }
 
-export function computeQuote(input: QuoteBody): Quote {
+export function computeQuote(input: QuoteFields): Quote {
 	const price = systemPrice(input.systemSizeKw);
 	const principalUsed = round2(price - input.downPayment);
 	const band = riskBand(input.monthlyConsumptionKwh, input.systemSizeKw);

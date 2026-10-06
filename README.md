@@ -51,10 +51,13 @@ Schema in `docker/postgres/*.sql`. Every quote is saved in `quote` with its offe
 
 | Field                   | Rule                                              |
 | ----------------------- | ------------------------------------------------- |
+| `requestId`             | UUID, the same on every retry of one quote        |
 | `address`               | Non-empty text                                    |
 | `monthlyConsumptionKwh` | Number above 0, max 100000, at most 2 decimals    |
 | `systemSizeKw`          | Number 1 to 1000, at most 2 decimals              |
 | `downPayment`           | Optional (default 0), cents only, below the price |
+
+A repeat of a saved `requestId` saves nothing, so a retry never adds a duplicate. The form makes the id from the inputs and a random value per page load, so a resubmit of the same inputs repeats it.
 
 Price is `systemSizeKw * 1200`, rounded to cents. All rules live in `lib/quote.ts`.
 
