@@ -1,14 +1,14 @@
 @import "tailwindcss";
 
 @theme inline {
-  --font-sans: var(--font-dm-sans);
-  --color-ink: #344054;
-  --color-brand: #2438e6;
-  --color-brand-dark: #1a2bb8;
+	--font-sans: var(--font-dm-sans);
+	--color-ink: #344054;
+	--color-brand: #2438e6;
+	--color-brand-dark: #1a2bb8;
 }
 
 body {
-  color: var(--color-ink);
-  /* Not "fixed": iOS Safari ignores it, and it leaves bands on tall pages */
-  background: #9aa7b8 url("/background.webp") center bottom / cover no-repeat;
+	color: var(--color-ink);
+	/* Not "fixed": iOS Safari ignores it, and it leaves bands on tall pages */
+	background: #9aa7b8 url("/background.webp") center bottom / cover no-repeat;
 }
