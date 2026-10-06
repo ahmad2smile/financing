@@ -8,4 +8,3 @@
 - Bad input that Postgres refuses but zod accepts (e.g. a NUL byte in `address`) is answered with a quote that is never saved. Fix: reject `\u0000` in `lib/quote.ts`, and map check/data errors from `saveQuote` to 422.
 - Quotes that fail to save are only logged (with input and quote), not counted or retried. Add a metric and a way to replay them from the log.
 - `saveQuote` is not idempotent: a retry after a lost COMMIT reply saves a duplicate quote that can never be deleted. Fix: client sends a request id, unique per user in `quote`.
-- Nothing stops the app from running as `superuser`, which silently turns off row level security. Fix: on startup, refuse to run if `current_user` has `rolsuper` or `rolbypassrls`.

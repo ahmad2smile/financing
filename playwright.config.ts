@@ -22,7 +22,7 @@ export default defineConfig({
 			dependencies: ["setup"],
 		},
 		{ name: "signed-out", testMatch: "auth.spec.ts" },
-		{ name: "database", testMatch: "quote-storage.spec.ts" },
+		{ name: "database", testMatch: ["quote-storage.spec.ts", "unsafe-role.spec.ts"] },
 		{
 			name: "server-error",
 			testMatch: "server-error.spec.ts",
