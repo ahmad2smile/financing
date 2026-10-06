@@ -18,8 +18,7 @@ const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD
 
 const label = "text-sm font-medium";
 const input =
-	"h-10 rounded-[10px] border border-zinc-300 bg-black/[0.063] px-3 text-sm outline-none placeholder:text-zinc-500 focus:border-brand focus:bg-white aria-invalid:border-red-600";
-const locked = "cursor-not-allowed text-zinc-500";
+	"h-10 rounded-[10px] border border-zinc-300 bg-black/[0.063] px-3 text-sm outline-none placeholder:text-zinc-500 focus:border-brand focus:bg-white aria-invalid:border-red-600 disabled:cursor-not-allowed disabled:text-zinc-500";
 const errorText = "text-sm text-red-700";
 const card = "rounded-xl border border-zinc-200 p-4";
 
@@ -68,11 +67,15 @@ export default function QuoteCalculator({ owner }: { owner: QuoteOwner }) {
 			setQuote(null);
 			const rejected = errorResponseSchema.safeParse(body);
 			if (!response.ok && rejected.success && Object.keys(rejected.data.errors).length > 0) {
+				// Errors for unknown fields all go to the alert, so none are hidden.
+				// hasOwn, not "in": every object also has keys like "constructor", and those are not form fields.
+				const unknown: string[] = [];
 				for (const [name, message] of Object.entries(rejected.data.errors)) {
-					// Errors for unknown fields go to the alert, so none are hidden
-					if (name in emptyForm) setError(name as keyof QuoteFormValues, { message });
-					else fail(message);
+					if (Object.hasOwn(emptyForm, name)) setError(name as keyof QuoteFormValues, { message });
+					else unknown.push(message);
 				}
+
+				if (unknown.length) fail(unknown.join(" "));
 				return;
 			}
 
@@ -94,108 +97,110 @@ export default function QuoteCalculator({ owner }: { owner: QuoteOwner }) {
 				className="grid gap-3"
 				aria-label="Quote form"
 			>
-				<div className="grid gap-1">
-					<label htmlFor="fullName" className={label}>
-						Full name
-					</label>
-					<input id="fullName" value={owner.fullName} disabled type="text" className={`${input} ${locked}`} />
-				</div>
+				{/* Locked while waiting: an edit then would make the answer look like it matches the new inputs */}
+				<fieldset disabled={isSubmitting} className="grid min-w-0 gap-3">
+					<div className="grid gap-1">
+						<label htmlFor="fullName" className={label}>
+							Full name
+						</label>
+						<input id="fullName" value={owner.fullName} disabled type="text" className={input} />
+					</div>
 
-				<div className="grid gap-1">
-					<label htmlFor="email" className={label}>
-						Email
-					</label>
-					<input id="email" value={owner.email} disabled type="email" className={`${input} ${locked}`} />
-				</div>
+					<div className="grid gap-1">
+						<label htmlFor="email" className={label}>
+							Email
+						</label>
+						<input id="email" value={owner.email} disabled type="email" className={input} />
+					</div>
 
-				<div className="grid gap-1">
-					<label htmlFor="address" className={label}>
-						Address
-					</label>
-					<input
-						id="address"
-						{...register("address")}
-						type="text"
-						autoComplete="street-address"
-						aria-invalid={errors.address ? true : undefined}
-						aria-describedby={errors.address ? "address-error" : undefined}
-						className={input}
-					/>
-					{errors.address && (
-						<p id="address-error" className={errorText}>
-							{errors.address.message}
-						</p>
-					)}
-				</div>
+					<div className="grid gap-1">
+						<label htmlFor="address" className={label}>
+							Address
+						</label>
+						<input
+							id="address"
+							{...register("address")}
+							type="text"
+							autoComplete="street-address"
+							aria-invalid={errors.address ? true : undefined}
+							aria-describedby={errors.address ? "address-error" : undefined}
+							className={input}
+						/>
+						{errors.address && (
+							<p id="address-error" className={errorText}>
+								{errors.address.message}
+							</p>
+						)}
+					</div>
 
-				{/* Number fields are text so we see exactly what was typed. type=number hides bad text as "". */}
-				<div className="grid gap-1">
-					<label htmlFor="monthlyConsumptionKwh" className={label}>
-						Monthly consumption (kWh)
-					</label>
-					<input
-						id="monthlyConsumptionKwh"
-						{...register("monthlyConsumptionKwh")}
-						type="text"
-						inputMode="decimal"
-						aria-invalid={errors.monthlyConsumptionKwh ? true : undefined}
-						aria-describedby={errors.monthlyConsumptionKwh ? "monthlyConsumptionKwh-error" : undefined}
-						className={input}
-					/>
-					{errors.monthlyConsumptionKwh && (
-						<p id="monthlyConsumptionKwh-error" className={errorText}>
-							{errors.monthlyConsumptionKwh.message}
-						</p>
-					)}
-				</div>
+					{/* Number fields are text so we see exactly what was typed. type=number hides bad text as "". */}
+					<div className="grid gap-1">
+						<label htmlFor="monthlyConsumptionKwh" className={label}>
+							Monthly consumption (kWh)
+						</label>
+						<input
+							id="monthlyConsumptionKwh"
+							{...register("monthlyConsumptionKwh")}
+							type="text"
+							inputMode="decimal"
+							aria-invalid={errors.monthlyConsumptionKwh ? true : undefined}
+							aria-describedby={errors.monthlyConsumptionKwh ? "monthlyConsumptionKwh-error" : undefined}
+							className={input}
+						/>
+						{errors.monthlyConsumptionKwh && (
+							<p id="monthlyConsumptionKwh-error" className={errorText}>
+								{errors.monthlyConsumptionKwh.message}
+							</p>
+						)}
+					</div>
 
-				<div className="grid gap-1">
-					<label htmlFor="systemSizeKw" className={label}>
-						System size (kW)
-					</label>
-					<input
-						id="systemSizeKw"
-						{...register("systemSizeKw")}
-						type="text"
-						inputMode="decimal"
-						aria-invalid={errors.systemSizeKw ? true : undefined}
-						aria-describedby={errors.systemSizeKw ? "systemSizeKw-error" : undefined}
-						className={input}
-					/>
-					{errors.systemSizeKw && (
-						<p id="systemSizeKw-error" className={errorText}>
-							{errors.systemSizeKw.message}
-						</p>
-					)}
-				</div>
+					<div className="grid gap-1">
+						<label htmlFor="systemSizeKw" className={label}>
+							System size (kW)
+						</label>
+						<input
+							id="systemSizeKw"
+							{...register("systemSizeKw")}
+							type="text"
+							inputMode="decimal"
+							aria-invalid={errors.systemSizeKw ? true : undefined}
+							aria-describedby={errors.systemSizeKw ? "systemSizeKw-error" : undefined}
+							className={input}
+						/>
+						{errors.systemSizeKw && (
+							<p id="systemSizeKw-error" className={errorText}>
+								{errors.systemSizeKw.message}
+							</p>
+						)}
+					</div>
 
-				<div className="grid gap-1">
-					<label htmlFor="downPayment" className={label}>
-						Down payment (USD, optional)
-					</label>
-					<input
-						id="downPayment"
-						{...register("downPayment")}
-						type="text"
-						inputMode="decimal"
-						aria-invalid={errors.downPayment ? true : undefined}
-						aria-describedby={errors.downPayment ? "downPayment-error" : undefined}
-						className={input}
-					/>
-					{errors.downPayment && (
-						<p id="downPayment-error" className={errorText}>
-							{errors.downPayment.message}
-						</p>
-					)}
-				</div>
+					<div className="grid gap-1">
+						<label htmlFor="downPayment" className={label}>
+							Down payment (USD, optional)
+						</label>
+						<input
+							id="downPayment"
+							{...register("downPayment")}
+							type="text"
+							inputMode="decimal"
+							aria-invalid={errors.downPayment ? true : undefined}
+							aria-describedby={errors.downPayment ? "downPayment-error" : undefined}
+							className={input}
+						/>
+						{errors.downPayment && (
+							<p id="downPayment-error" className={errorText}>
+								{errors.downPayment.message}
+							</p>
+						)}
+					</div>
 
-				<button
-					type="submit"
-					disabled={isSubmitting}
-					className="mt-2 justify-self-center rounded-lg bg-brand px-8 py-2.5 text-sm font-semibold text-white hover:bg-brand-dark disabled:bg-black/12.5"
-				>
-					{isSubmitting ? "Calculating..." : "Get pre-qualification"}
-				</button>
+					<button
+						type="submit"
+						className="mt-2 justify-self-center rounded-lg bg-brand px-8 py-2.5 text-sm font-semibold text-white hover:bg-brand-dark disabled:bg-black/12.5"
+					>
+						{isSubmitting ? "Calculating..." : "Get pre-qualification"}
+					</button>
+				</fieldset>
 				{errors.root?.server && (
 					<p role="alert" className={`${errorText} text-center`}>
 						{errors.root.server.message}

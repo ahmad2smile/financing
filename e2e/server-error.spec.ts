@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test";
 // nobody catches. Next answers those with a generic 500 and never shows the error itself.
 
 test("uncaught error on a page shows our error page with status 500, not the Next default", async ({ page }) => {
-	for (const url of ["/", "/quotes"]) {
+	for (const url of ["/", "/quotes", "/admin/quotes"]) {
 		const response = await page.goto(url);
 
 		expect(response?.status()).toBe(500);

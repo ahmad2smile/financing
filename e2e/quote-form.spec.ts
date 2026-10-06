@@ -36,7 +36,7 @@ const shot = (page: Page, step?: string) => {
 };
 
 test.beforeEach(async ({ page }) => {
-	await page.goto("/quotes");
+	await page.goto("/");
 });
 
 // Runs after the checks, so it shows the state that was checked (or the state at failure)
@@ -44,12 +44,100 @@ test.afterEach(async ({ page }) => {
 	await shot(page);
 });
 
-test("signed in get personal quote on the home page opens the quote form", async ({ page }) => {
-	await page.goto("/");
-	await page.getByRole("link", { name: "Get personal quote" }).click();
-
-	await page.waitForURL("/quotes");
+test("signed in home page shows the quote form, not the sign in link", async ({ page }) => {
 	await expect(page.getByRole("form", { name: "Quote form" })).toBeVisible();
+	await expect(page.getByRole("link", { name: "Get personal quote" })).toHaveCount(0);
+});
+
+test("submitted quote shows in My quotes from the nav bar, newest first", async ({ page }) => {
+	const address = `${crypto.randomUUID()} Listed St`;
+
+	await fill(page, { Address: address, "Down payment (USD, optional)": "1,000" });
+	await submit(page);
+	await expect(results(page)).toContainText("$12,000.00");
+
+	await page.getByRole("link", { name: "My quotes" }).click();
+	await page.waitForURL("/quotes");
+	const row = page.getByRole("row", { name: address });
+	await expect(row).toContainText("$12,000.00");
+	await expect(row).toContainText("$1,000.00");
+	await expect(row).toContainText("$217.29"); // 5 years on 11,000 at band A
+	await expect(page.getByRole("columnheader", { name: "Owner" })).toHaveCount(0);
+	// The test user is not an admin
+	await expect(page.getByRole("link", { name: "All quotes" })).toHaveCount(0);
+});
+
+// Each browser sees the time in its own zone. Tokyo is UTC+9, so it never matches the UTC text.
+for (const timezoneId of ["Asia/Tokyo", "America/New_York"])
+	test.describe(`in ${timezoneId}`, () => {
+		test.use({ timezoneId });
+
+		test(`My quotes shows the date in the viewer's time zone (${timezoneId})`, async ({ page }) => {
+			const address = `${crypto.randomUUID()} Time Zone St`;
+			const response = await page.request.post("/api/quotes", {
+				data: { requestId: crypto.randomUUID(), address, monthlyConsumptionKwh: 500, systemSizeKw: 10 },
+			});
+			expect(response.ok()).toBe(true);
+
+			// The server does not know the zone, so its HTML must hold no time text: the browser fills it in.
+			// Otherwise the server and browser text differ, and a production build hides that mismatch.
+			const html = await (await page.request.get("/quotes")).text();
+			expect(html).toMatch(/<time dateTime="[^"]+"><\/time>/);
+			expect(html).not.toMatch(/<time dateTime="[^"]+">[^<]/);
+
+			await page.goto("/quotes");
+			const time = page.getByRole("row", { name: address }).locator("time");
+			const at = new Date((await time.getAttribute("datetime"))!);
+			const inZone = (timeZone: string) =>
+				new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone }).format(at);
+
+			await expect(time).toHaveText(inZone(timezoneId));
+			if (timezoneId === "Asia/Tokyo") expect(inZone(timezoneId)).not.toBe(inZone("UTC"));
+		});
+	});
+
+test("My quotes shows 10 quotes per page, First, Previous, Next and Last move between pages", async ({ page }) => {
+	// Quotes are never deleted, so add only what is missing for a second page
+	const saved = await savedQuoteCount();
+	for (let i = saved; i <= 10; i++) {
+		const response = await page.request.post("/api/quotes", {
+			data: {
+				requestId: crypto.randomUUID(),
+				address: `Page Fill ${i} St`,
+				monthlyConsumptionKwh: 500,
+				systemSizeKw: 10,
+			},
+		});
+		expect(response.ok()).toBe(true);
+	}
+
+	await page.goto("/quotes");
+	await expect(page.locator("tbody tr")).toHaveCount(10);
+	await expect(page.getByText(/^Page 1 of \d+/)).toBeVisible();
+	await expect(page.getByRole("button", { name: "Previous" })).toBeDisabled();
+
+	await page.getByRole("link", { name: "Next" }).click();
+	await page.waitForURL("/quotes?page=2");
+	await expect(page.getByText(/^Page 2 of \d+/)).toBeVisible();
+	await expect(page.locator("tbody tr").first()).toBeVisible();
+
+	await page.getByRole("link", { name: "Previous" }).click();
+	await page.waitForURL("/quotes?page=1");
+	await expect(page.getByText(/^Page 1 of \d+/)).toBeVisible();
+	await expect(page.getByRole("button", { name: "First" })).toBeDisabled();
+
+	// Last goes to the last page the table knew about. Other tests may add quotes meanwhile, so only check it got there.
+	const pages = Number((await page.getByText(/^Page 1 of \d+/).textContent())!.match(/of (\d+)/)![1]);
+	await page.getByRole("link", { name: "Last" }).click();
+	await page.waitForURL(`/quotes?page=${pages}`);
+	await expect(page.getByText(new RegExp(`^Page ${pages} of`))).toBeVisible();
+
+	await page.getByRole("link", { name: "First" }).click();
+	await page.waitForURL("/quotes?page=1");
+	await expect(page.getByText(/^Page 1 of \d+/)).toBeVisible();
+
+	// Past the last page there is nothing to show
+	expect((await page.goto("/quotes?page=999999"))?.status()).toBe(404);
 });
 
 test("name and email are filled from the signed-in user and cannot be changed", async ({ page }) => {
@@ -73,7 +161,7 @@ test("quote request does not send name or email, the server takes them from the 
 
 test("submitted quote is saved with its offers, owned by the signed-in user", async ({ page }) => {
 	// Other tests here save quotes in parallel, so find this one by its address
-	const address = `${Date.now()} Saved St`;
+	const address = `${crypto.randomUUID()} Saved St`;
 
 	await fill(page, {
 		Address: address,
@@ -111,6 +199,20 @@ test("submitted quote is saved with its offers, owned by the signed-in user", as
 	}
 });
 
+// Counts all of this user's saved quotes
+async function savedQuoteCount() {
+	const client = await db.connect();
+	try {
+		await client.query("BEGIN");
+		await client.query(`SELECT set_config('app.user_id', id, true) FROM "user" WHERE email = $1`, [testUser.email]);
+		const { rows } = await client.query(`SELECT count(*)::integer AS n FROM quote WHERE user_id = app_user_id()`);
+		return rows[0].n as number;
+	} finally {
+		await client.query("ROLLBACK");
+		client.release();
+	}
+}
+
 // Counts this user's saved quotes with this address, and reads their request ids
 async function savedRequestIds(address: string) {
 	const client = await db.connect();
@@ -126,7 +228,7 @@ async function savedRequestIds(address: string) {
 }
 
 test("resubmit after a lost answer sends the same request id and saves the quote once", async ({ page }) => {
-	const address = `${Date.now()} Lost Answer St`;
+	const address = `${crypto.randomUUID()} Lost Answer St`;
 	const sent: string[] = [];
 	// The first try reaches the server and is saved, but its answer never reaches the page
 	let lose = true;
@@ -151,7 +253,7 @@ test("resubmit after a lost answer sends the same request id and saves the quote
 });
 
 test("editing the form sends a new request id, so the edited quote is saved too", async ({ page }) => {
-	const address = `${Date.now()} Edited St`;
+	const address = `${crypto.randomUUID()} Edited St`;
 	const sent: string[] = [];
 	await page.route("/api/quotes", (route) => (sent.push(route.request().postDataJSON().requestId), route.continue()));
 
@@ -169,12 +271,12 @@ test("editing the form sends a new request id, so the edited quote is saved too"
 });
 
 test("same inputs after a page reload send a new request id, so a new quote is saved", async ({ page }) => {
-	const address = `${Date.now()} Reload St`;
+	const address = `${crypto.randomUUID()} Reload St`;
 	const sent: string[] = [];
 	await page.route("/api/quotes", (route) => (sent.push(route.request().postDataJSON().requestId), route.continue()));
 
 	for (let load = 1; load <= 2; load++) {
-		await page.goto("/quotes");
+		await page.goto("/");
 		await fill(page, { Address: address });
 		await submit(page);
 		await expect(results(page)).toContainText("$12,000.00");
@@ -188,7 +290,7 @@ test("same inputs after a page reload send a new request id, so a new quote is s
 test("API retries with one request id, also at the same time, save once", async ({ page }) => {
 	const body = {
 		requestId: crypto.randomUUID(),
-		address: `${Date.now()} Retry St`,
+		address: `${crypto.randomUUID()} Retry St`,
 		monthlyConsumptionKwh: 500,
 		systemSizeKw: 10,
 	};
@@ -206,7 +308,7 @@ test("API retries with one request id, also at the same time, save once", async 
 });
 
 test("API refuses an address with a NUL byte instead of answering with a quote it can't save", async ({ page }) => {
-	const address = `${Date.now()} Nul\u0000 St`;
+	const address = `${crypto.randomUUID()} Nul\u0000 St`;
 	const response = await page.request.post("/api/quotes", {
 		data: { requestId: crypto.randomUUID(), address, monthlyConsumptionKwh: 500, systemSizeKw: 10 },
 	});
@@ -308,6 +410,29 @@ test("editing after a quote marks the offers out of date until resubmit", async 
 	await expect(page.getByRole("status")).toHaveCount(0);
 });
 
+// Edits while waiting would make the answer look like it matches the new inputs, so the form is locked until it comes
+test("form is locked while a quote is calculated, so the offers always match the inputs", async ({ page }) => {
+	let release!: () => void;
+	const held = new Promise<void>((resolve) => (release = resolve));
+	await page.route("/api/quotes", async (route) => {
+		await held;
+		await route.continue();
+	});
+	const editable = ["Address", "Monthly consumption (kWh)", "System size (kW)", "Down payment (USD, optional)"];
+
+	await fill(page);
+	await submit(page);
+
+	for (const label of editable) await expect(page.getByLabel(label)).toBeDisabled();
+	await expect(page.getByRole("button", { name: "Calculating..." })).toBeDisabled();
+	await shot(page, "waiting");
+
+	release();
+	await expect(results(page)).toContainText("$12,000.00");
+	for (const label of editable) await expect(page.getByLabel(label)).toBeEnabled();
+	await expect(page.getByRole("status")).toHaveCount(0);
+});
+
 test("server field errors show under their field, unknown ones in the alert", async ({ page }) => {
 	await page.route("/api/quotes", (route) =>
 		route.fulfill({ status: 422, json: { errors: { systemSizeKw: "Size rejected by server.", extra: "Odd field." } } }),
@@ -319,4 +444,17 @@ test("server field errors show under their field, unknown ones in the alert", as
 	await expect(page.getByText("Size rejected by server.")).toBeVisible();
 	await expect(page.getByLabel("System size (kW)")).toHaveAttribute("aria-invalid", "true");
 	await expect(alert(page)).toHaveText("Odd field.");
+});
+
+// Every object has "constructor" and "toString", so these names must not be taken for form fields
+test("server errors for names every object has, and several unknown ones, all show in the alert", async ({ page }) => {
+	await page.route("/api/quotes", (route) =>
+		route.fulfill({ status: 422, json: { errors: { constructor: "First problem.", toString: "Second problem." } } }),
+	);
+
+	await fill(page);
+	await submit(page);
+
+	await expect(alert(page)).toContainText("First problem.");
+	await expect(alert(page)).toContainText("Second problem.");
 });

@@ -137,20 +137,87 @@ test("signed out home page has no quote form, get personal quote goes to sign in
 	await page.goto("/");
 	await expect(page.getByRole("form", { name: "Quote form" })).toHaveCount(0);
 
+	await expect(page.getByRole("link", { name: "My quotes" })).toHaveCount(0);
+
 	await page.getByRole("link", { name: "Get personal quote" }).click();
 	await loginOnKeycloak(page);
 
-	await page.waitForURL("/quotes");
+	await page.waitForURL("/");
 	await expect(page.getByRole("form", { name: "Quote form" })).toBeVisible();
 	await expect(page.getByText(email)).toBeVisible();
 });
 
-test("signed out visit to /quotes never shows the form and goes to sign in", async ({ request }) => {
-	const response = await request.get("/quotes", { maxRedirects: 0 });
+for (const path of ["/quotes", "/admin/quotes"]) {
+	test(`signed out visit to ${path} never shows quotes and goes to sign in`, async ({ request }) => {
+		const response = await request.get(path, { maxRedirects: 0 });
 
-	expect(response.status()).toBe(307);
-	expect(response.headers().location).toBe("/sign-in?callbackUrl=%2Fquotes");
-	expect(await response.text()).not.toContain("Quote form");
+		expect(response.status()).toBe(307);
+		expect(response.headers().location).toBe(`/sign-in?${new URLSearchParams({ callbackUrl: path })}`);
+		expect(await response.text()).not.toContain("<table");
+	});
+}
+
+// Saves a quote through the API as the user signed in on this page, and returns its address
+async function saveQuoteAs(page: Page, name: string) {
+	const address = `${crypto.randomUUID()} ${name} St`;
+	const response = await page.request.post("/api/quotes", {
+		data: { requestId: crypto.randomUUID(), address, monthlyConsumptionKwh: 500, systemSizeKw: 10 },
+	});
+	expect(response.ok()).toBe(true);
+	return address;
+}
+
+// Looks for a row with this text on every page of the table, from page 1, and returns its text or null.
+// Other tests save quotes at the same time, so a row can move to a later page.
+async function findRow(page: Page, path: string, text: string) {
+	await page.goto(path);
+	for (let n = 1; ; n++) {
+		await expect(page.getByText(new RegExp(`^Page ${n} of`))).toBeVisible();
+		const row = page.getByRole("row", { name: text });
+		if (await row.count()) return row.textContent();
+
+		// On the last page Next is a disabled button, not a link
+		const next = page.getByRole("link", { name: "Next" });
+		if (!(await next.count())) return null;
+		await next.click();
+	}
+}
+
+// Not tempUser: it is removed after the test, and saved quotes can never be removed, so its user row could not be.
+// Only signs in, never out, so testUser's session shared with the quote form tests stays.
+test("My quotes shows only your own quotes, All quotes is only for admins and shows everyone's", async ({
+	browser,
+	page,
+}) => {
+	await signInAt(page, "/quotes");
+	const userAddress = await saveQuoteAs(page, "User");
+
+	const adminPage = await browser.newPage();
+	await signInAt(adminPage, "/quotes", { email: "admin@test.com", password: "admin" });
+	const adminAddress = await saveQuoteAs(adminPage, "Admin");
+
+	// User: own quote in My quotes, no link to All quotes, and the page itself is not there
+	expect(await findRow(page, "/quotes", userAddress)).not.toBeNull();
+	expect(await findRow(page, "/quotes", adminAddress)).toBeNull();
+	await expect(page.getByRole("link", { name: "All quotes" })).toHaveCount(0);
+	expect((await page.goto("/admin/quotes"))?.status()).toBe(404);
+
+	// Admin: My quotes is still only their own
+	expect(await findRow(adminPage, "/quotes", adminAddress)).not.toBeNull();
+	expect(await findRow(adminPage, "/quotes", userAddress)).toBeNull();
+
+	// Admin: All quotes has both, with their owners
+	await adminPage.getByRole("link", { name: "All quotes" }).click();
+	await adminPage.waitForURL("/admin/quotes");
+	expect(await findRow(adminPage, "/admin/quotes", userAddress)).toContain(email);
+	expect(await findRow(adminPage, "/admin/quotes", adminAddress)).toContain("admin@test.com");
+	await adminPage.close();
+});
+
+test("a page number that is not a number is a 404", async ({ page }) => {
+	await signInAt(page, "/quotes");
+
+	for (const bad of ["0", "-1", "abc", "1.5"]) expect((await page.goto(`/quotes?page=${bad}`))?.status()).toBe(404);
 });
 
 // Browsers read "/\host" and "/<tab>/host" as "//host", so these must be refused like a full URL
@@ -203,14 +270,16 @@ test("full name on the quote form is first and last name from Keycloak, and foll
 	request,
 	tempUser,
 }) => {
-	await signInAt(page, "/quotes", tempUser);
+	await page.goto("/");
+	await signInWithKeycloak(page, tempUser);
 	await expect(page.getByLabel("Full name")).toHaveValue("Ada Lovelace");
 
 	// Changed in Keycloak: the next sign in brings the new name
 	const admin = await keycloakAdmin(request);
 	await admin.update(tempUser.id, { firstName: "Ada", lastName: "Byron", email: tempUser.email });
 	const next = await browser.newPage();
-	await signInAt(next, "/quotes", tempUser);
+	await next.goto("/");
+	await signInWithKeycloak(next, tempUser);
 	await expect(next.getByLabel("Full name")).toHaveValue("Ada Byron");
 	await next.close();
 });

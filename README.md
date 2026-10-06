@@ -11,7 +11,11 @@ docker compose up -d     # Postgres :5432, Keycloak :8080
 pnpm dev                 # http://localhost:3000, must be this port: Keycloak calls back to it
 ```
 
-- `/` links to `/quotes`, the quote form. Signed-out visitors go through Keycloak sign in first.
+- `/` is the quote form. Signed-out visitors see a link that goes through Keycloak sign in first.
+- `/quotes` lists the signed-in user's own quotes, newest first, 10 per page (`?page=2`).
+- `/admin/quotes` lists every user's quotes with their owner, 10 per page. Only admins see the nav bar link, others get a 404.
+- Both pages render `app/quotes/quotes.tsx` with a scope (`user` or `admin`) after the page checks sign in (and admin). It reads one page from Postgres on the server. The table (`app/quotes/quotes-table.tsx`, shadcn's Table) runs in the browser, so dates show in the viewer's time zone. The page buttons are links.
+- UI components come from shadcn with Base UI (`components.json`, `components/ui`). Add more with `pnpm dlx shadcn@latest add <name>`.
 - Keycloak admin: http://localhost:8080, `admin` / `admin`. Realm `financing` from `docker/keycloak/financing-realm.json`.
 - Seeded users: `admin@test.com` / `admin`, `user@test.com` / `user`. Sign up is open.
 

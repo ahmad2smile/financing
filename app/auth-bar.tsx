@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 
@@ -9,6 +10,19 @@ export default async function AuthBar() {
 		<header className="flex items-center justify-end gap-3 px-4 pt-4 text-sm">
 			{session?.user ? (
 				<>
+					<nav aria-label="Quotes" className="mr-auto flex gap-3">
+						<Link href="/" className="rounded-full bg-white/80 px-3 py-1.5 font-semibold hover:bg-white">
+							New quote
+						</Link>
+						<Link href="/quotes" className="rounded-full bg-white/80 px-3 py-1.5 font-semibold hover:bg-white">
+							My quotes
+						</Link>
+						{session.user.role === "admin" && (
+							<Link href="/admin/quotes" className="rounded-full bg-white/80 px-3 py-1.5 font-semibold hover:bg-white">
+								All quotes
+							</Link>
+						)}
+					</nav>
 					<span className="rounded-full bg-white/80 px-3 py-1.5">{session.user.email}</span>
 					<form
 						action={async () => {
