@@ -1,4 +1,5 @@
 import { db } from "@/data/db";
+import { logger } from "@/lib/log";
 
 const noStore = { "Cache-Control": "no-store" };
 
@@ -8,7 +9,7 @@ export async function GET() {
 	try {
 		await db.query("SELECT 1");
 	} catch (error) {
-		console.error("GET /api/health: database is not reachable", error);
+		logger.error({ err: error }, "database is not reachable");
 		return Response.json({ status: "error" }, { status: 503, headers: noStore });
 	}
 

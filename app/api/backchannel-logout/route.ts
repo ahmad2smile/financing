@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { isBadToken, verifyLogoutToken } from "@/lib/backchannel-logout";
+import { logger } from "@/lib/log";
 
 const noStore = { "Cache-Control": "no-store" };
 
@@ -10,7 +11,7 @@ export async function POST(request: Request) {
 	const form = await request.formData().catch(() => undefined);
 	const token = form?.get("logout_token");
 	if (typeof token !== "string") {
-		console.warn("POST /api/backchannel-logout rejected: no logout_token");
+		logger.warn("rejected: no logout_token");
 		return Response.json({ error: "invalid_request" }, { status: 400, headers: noStore });
 	}
 
@@ -19,14 +20,14 @@ export async function POST(request: Request) {
 		keycloakUserId = await verifyLogoutToken(token);
 	} catch (error) {
 		if (!isBadToken(error)) throw error;
-		console.warn("POST /api/backchannel-logout rejected: invalid logout_token", error);
+		logger.warn({ err: error }, "rejected: invalid logout_token");
 		return Response.json({ error: "invalid_request" }, { status: 400, headers: noStore });
 	}
 
 	const { internalAdapter } = await auth.$context;
 	const account = await internalAdapter.findAccountByKey({ providerId: "keycloak", accountId: keycloakUserId });
 	if (account) await internalAdapter.deleteUserSessions(account.userId);
-	console.info(`Back-channel logout: ended app sessions of Keycloak user ${keycloakUserId}`, { found: !!account });
+	logger.info({ keycloakUserId, userId: account?.userId }, "ended all app sessions of the Keycloak user");
 
 	return new Response(null, { status: 200, headers: noStore });
 }

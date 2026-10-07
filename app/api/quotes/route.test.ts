@@ -1,6 +1,7 @@
 import { DatabaseError } from "pg";
 import { auth } from "@/lib/auth";
 import { saveQuote } from "@/data/quote-store";
+import { logger } from "@/lib/log";
 import { POST } from "./route";
 
 // Auth and store need Keycloak and Postgres, so they are mocked. E2E tests cover the real path.
@@ -21,8 +22,8 @@ const post = (body: string) => POST(new Request("http://localhost/api/quotes", {
 
 beforeEach(() => {
 	jest.clearAllMocks();
-	jest.spyOn(console, "warn").mockImplementation(() => {});
-	jest.spyOn(console, "error").mockImplementation(() => {});
+	jest.spyOn(logger, "warn").mockImplementation(() => {});
+	jest.spyOn(logger, "error").mockImplementation(() => {});
 	getSession.mockResolvedValue({ user: { id: "1", name: "Jane Doe", email: "jane@test.com" } });
 	save.mockResolvedValue();
 });
@@ -70,7 +71,16 @@ it("save failure still answers with the computed quote and logs it", async () =>
 
 	expect(response.status).toBe(200);
 	expect(await response.json()).toMatchObject({ systemPrice: 6000, band: "B" });
-	expect(console.error).toHaveBeenCalledTimes(1);
+	// Logged once, with what is needed to find and recover the quote
+	expect(logger.error).toHaveBeenCalledTimes(1);
+	expect(logger.error).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: "1",
+			input: expect.objectContaining(valid),
+			err: expect.objectContaining({ message: "connection refused" }),
+		}),
+		"could not save the quote",
+	);
 });
 
 // Same error pg throws for data Postgres refuses: 22021 is a NUL byte in text, 23514 a failed check
@@ -87,7 +97,7 @@ it.each(["22021", "23514"])(
 		expect(await response.json()).toEqual({
 			errors: { form: "These details can't be saved. Check them and try again." },
 		});
-		expect(console.warn).toHaveBeenCalledTimes(1);
+		expect(logger.warn).toHaveBeenCalledTimes(1);
 	},
 );
 
@@ -97,5 +107,5 @@ it("save failing for another Postgres reason still answers with the quote", asyn
 	const response = await post(JSON.stringify(valid));
 
 	expect(response.status).toBe(200);
-	expect(console.error).toHaveBeenCalledTimes(1);
+	expect(logger.error).toHaveBeenCalledTimes(1);
 });

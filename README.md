@@ -110,6 +110,14 @@ Price is `systemSizeKw * NEXT_PUBLIC_PRICE_PER_KW`, rounded to cents. A repeat o
 | `422`  | Invalid input, or data Postgres refuses: `{ errors: { <field>, form? } }`                                                                       |
 | `500`  | Unexpected error: logged, no details                                                                                                            |
 
+## Logging
+
+Server logs are JSON lines from [pino](https://getpino.io) on stdout (`logger` in `lib/log.ts`): `level`, `time`, `msg`, `traceId`, `spanId`, then fields. An error goes under `err` (type, message, stack, cause and its own fields like `code`).
+
+- Next.js makes an OpenTelemetry span for every request, with method, route, status and duration (`registerOTel` in `instrumentation.ts`). Set `OTEL_EXPORTER_OTLP_ENDPOINT` to send them to a collector. Without it, they are not kept and there is no request or response line in the logs.
+- Every line written during a request has its `traceId`. A caller's W3C `traceparent` header is kept, so its trace id finds the lines and the span.
+- Errors no handler caught are logged by `onRequestError` in `instrumentation.ts`, with the path but not the query string.
+
 ## Notes
 
 Assumptions and open decisions, also marked `NOTE:` in the code.

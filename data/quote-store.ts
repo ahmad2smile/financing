@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { logger } from "@/lib/log";
 import type { Band, Quote, QuoteBody } from "@/lib/quote";
 
 // How each band is saved in quote.band. Saved rows keep these numbers forever: never renumber, only add.
@@ -101,7 +102,7 @@ export async function listQuotes(
 		return { quotes, total: count.rows[0].total };
 	} catch (error) {
 		await client.query("ROLLBACK").catch((rollbackError: Error) => {
-			console.error("listQuotes ROLLBACK failed", rollbackError);
+			logger.error({ err: rollbackError }, "listQuotes ROLLBACK failed");
 			broken = rollbackError;
 		});
 		throw error;
@@ -153,7 +154,7 @@ export async function saveQuote(userId: string, input: QuoteBody, quote: Quote):
 	} catch (error) {
 		// A failed ROLLBACK means the connection is bad: drop it from the pool instead of reusing it
 		await client.query("ROLLBACK").catch((rollbackError: Error) => {
-			console.error("saveQuote ROLLBACK failed", rollbackError);
+			logger.error({ err: rollbackError }, "saveQuote ROLLBACK failed");
 			broken = rollbackError;
 		});
 		throw error;
