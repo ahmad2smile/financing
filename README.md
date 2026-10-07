@@ -32,6 +32,7 @@ The browser reaches Keycloak at `KEYCLOAK_ISSUER` (`localhost:8080`), the contai
 - `/` quote form. Signed-out visitors are sent through Keycloak sign in first.
 - `/quotes` the user's own quotes, newest first, 10 per page (`?page=2`).
 - `/admin/quotes` every user's quotes with their owner. Admins only, others get a 404.
+- `/quotes/<id>` one quote with its inputs and offers. Each row's address in both lists links here. For its owner and admins, others get a 404.
 
 Both lists render `app/quotes/quotes.tsx` with a scope (`user` or `admin`). It reads one page from Postgres on the server, and the table runs in the browser so dates show in the viewer's time zone. UI is shadcn with Base UI (`pnpm dlx shadcn@latest add <name>`).
 
@@ -90,7 +91,9 @@ The app connects as `financing` and sets `app.user_id` per transaction (`data/qu
 
 ## API
 
-`POST /api/quotes` with a JSON body and a signed-in session cookie. Name and email come from the session, never the body. All rules live in `lib/quote.ts`.
+### `POST /api/quotes`
+
+With a JSON body and a signed-in session cookie. Name and email come from the session, never the body. All rules live in `lib/quote.ts`.
 
 | Field                   | Rule                                              |
 | ----------------------- | ------------------------------------------------- |
@@ -109,6 +112,16 @@ Price is `systemSizeKw * NEXT_PUBLIC_PRICE_PER_KW`, rounded to cents. A repeat o
 | `401`  | Not signed in: `{ errors: { form } }`                                                                                                           |
 | `422`  | Invalid input, or data Postgres refuses: `{ errors: { <field>, form? } }`                                                                       |
 | `500`  | Unexpected error: logged, no details                                                                                                            |
+
+### `GET /api/quotes/<id>`
+
+One saved quote, with a signed-in session cookie. Row level security lets only its owner or an admin read it.
+
+| Status | Body                                                                                                                                                                   |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `200`  | `{ id, createdAt, ownerEmail, address, monthlyConsumptionKwh, systemSizeKw, downPayment, systemPrice, principal, band, offers: [{ termYears, apr, monthlyPayment }] }` |
+| `401`  | Not signed in: `{ errors: { form } }`                                                                                                                                  |
+| `404`  | Missing, not yours, or the id is not a UUID. All the same, so nobody learns which ids exist: `{ errors: { form } }`                                                    |
 
 ## Logging
 

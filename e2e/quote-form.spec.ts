@@ -67,6 +67,45 @@ test("submitted quote shows in My quotes from the nav bar, newest first", async 
 	await expect(page.getByRole("link", { name: "All quotes" })).toHaveCount(0);
 });
 
+test("a click anywhere on a quote row in My quotes opens its details, with the saved inputs and every offer", async ({
+	page,
+}) => {
+	const address = `${crypto.randomUUID()} Details St`;
+
+	await fill(page, { Address: address, "Down payment (USD, optional)": "1,000" });
+	await submit(page);
+	await expect(results(page)).toContainText("$12,000.00");
+
+	// The whole row opens the details, not only the address
+	await page.goto("/quotes");
+	// A mouse click where the band cell is. locator.click() would refuse: the address link covers the cell, as it should.
+	const band = page.getByRole("row", { name: address }).getByRole("cell", { name: "A", exact: true });
+	await band.scrollIntoViewIfNeeded();
+	const box = (await band.boundingBox())!;
+	await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+	await page.waitForURL(/\/quotes\/[0-9a-f-]{36}$/);
+
+	await expect(page.getByRole("heading", { name: "Quote details" })).toBeVisible();
+	const inputs = page.getByLabel("Quote inputs");
+	for (const text of [address, testUser.email, "500 kWh", "10 kW", "$1,000.00", "$11,000.00"])
+		await expect(inputs).toContainText(text);
+	await expect(page.getByText("$12,000.00")).toBeVisible();
+	await expect(page.getByText("A", { exact: true })).toBeVisible();
+	// 6.9% APR (band A) on 11,000
+	for (const [term, payment] of [
+		["5 years", "$217.29"],
+		["10 years", "$127.15"],
+		["15 years", "$98.26"],
+	])
+		await expect(
+			page.getByRole("row").filter({ has: page.getByRole("rowheader", { name: term, exact: true }) }),
+		).toContainText(payment);
+	await shot(page, "details");
+
+	await page.getByRole("link", { name: "Back to My quotes" }).click();
+	await page.waitForURL("/quotes");
+});
+
 // Each browser sees the time in its own zone. Tokyo is UTC+9, so it never matches the UTC text.
 for (const timezoneId of ["Asia/Tokyo", "America/New_York"])
 	test.describe(`in ${timezoneId}`, () => {

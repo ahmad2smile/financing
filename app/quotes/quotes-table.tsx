@@ -4,30 +4,15 @@
 // Paging is in Postgres and the URL (?page=) holds the page number, so the page buttons are plain links.
 import { cn } from "cn";
 import Link from "next/link";
-import { useSyncExternalStore, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { SavedQuote } from "@/data/quote-store";
 import { TERMS } from "@/lib/quote";
+import LocalTime from "./local-time";
 
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const number = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
-// No timeZone: the browser's own. Only used in the browser, see LocalTime.
-const date = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" });
-
-const noSubscribe = () => () => {};
-
-// The server renders this first and does not know the viewer's time zone, so it shows no text until the browser
-// takes over. useSyncExternalStore gives false on the server and while hydrating, then true, so there is no mismatch.
-function LocalTime({ value }: { value: Date }) {
-	const inBrowser = useSyncExternalStore(
-		noSubscribe,
-		() => true,
-		() => false,
-	);
-
-	return <time dateTime={value.toISOString()}>{inBrowser ? date.format(value) : null}</time>;
-}
 
 // Numbers are right aligned, so they line up under their header
 type Column = { header: string; numeric?: boolean; cell: (quote: SavedQuote) => ReactNode };
@@ -38,10 +23,17 @@ const columns: Column[] = [
 	{ header: "Date", cell: (q) => <LocalTime value={q.createdAt} /> },
 	{
 		header: "Address",
+		// The link to the quote's details. Address, not date: the date has no text until the browser fills it in.
+		// Its ::after covers the whole row (the row is relative), so a click anywhere on the row opens it,
+		// and it stays a real link: new tab, keyboard and screen readers work.
 		cell: (q) => (
-			<div className="max-w-64 truncate" title={q.address}>
+			<Link
+				href={`/quotes/${q.id}`}
+				className="block max-w-64 truncate outline-none after:absolute after:inset-0"
+				title={q.address}
+			>
 				{q.address}
-			</div>
+			</Link>
 		),
 	},
 	{ header: "Consumption (kWh)", numeric: true, cell: (q) => number.format(q.monthlyConsumptionKwh) },
@@ -112,7 +104,10 @@ export default function QuotesTable({
 					<TableBody>
 						{quotes.length ? (
 							quotes.map((quote) => (
-								<TableRow key={quote.id}>
+								<TableRow
+									key={quote.id}
+									className="has-focus-visible:outline-brand relative cursor-pointer has-focus-visible:outline-2 has-focus-visible:-outline-offset-2"
+								>
 									{shown.map((c) => (
 										<TableCell key={c.header} className={c.numeric ? "text-right" : undefined}>
 											{c.cell(quote)}

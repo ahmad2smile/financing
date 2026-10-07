@@ -147,7 +147,8 @@ test("signed out home page has no quote form, get personal quote goes to sign in
 	await expect(page.getByText(email)).toBeVisible();
 });
 
-for (const path of ["/quotes", "/admin/quotes"]) {
+// A fixed id: the test title must be the same in every worker
+for (const path of ["/quotes", "/admin/quotes", "/quotes/0199a1b2-0000-7000-8000-000000000001"]) {
 	test(`signed out visit to ${path} never shows quotes and goes to sign in`, async ({ request }) => {
 		const response = await request.get(path, { maxRedirects: 0 });
 
@@ -212,6 +213,57 @@ test("My quotes shows only your own quotes, All quotes is only for admins and sh
 	expect(await findRow(adminPage, "/admin/quotes", userAddress)).toContain(email);
 	expect(await findRow(adminPage, "/admin/quotes", adminAddress)).toContain("admin@test.com");
 	await adminPage.close();
+});
+
+// Every way a quote can't be read gives the same 404, so nobody learns which quote ids exist.
+// tempUser saves no quote, so it can be removed after the test.
+test("a quote's details are only for its owner and admins, everyone else gets a 404", async ({
+	browser,
+	page,
+	request,
+	tempUser,
+}) => {
+	await signInAt(page, "/quotes");
+	const address = await saveQuoteAs(page, "Details");
+	expect(await findRow(page, "/quotes", address)).not.toBeNull();
+	const href = (await page.getByRole("link", { name: address }).getAttribute("href"))!;
+	expect(href).toMatch(/^\/quotes\/[0-9a-f-]{36}$/);
+
+	// Owner: page and API
+	expect((await page.goto(href))?.status()).toBe(200);
+	await expect(page.getByLabel("Quote inputs")).toContainText(address);
+	const own = await page.request.get(`/api${href}`);
+	expect(own.status()).toBe(200);
+	expect(await own.json()).toMatchObject({ id: href.split("/").pop(), address, ownerEmail: email, band: "A" });
+
+	// Another user: the same 404 as a quote that does not exist, or an id that is not a UUID
+	const other = await browser.newPage();
+	await signInAt(other, "/quotes", tempUser);
+	for (const path of [href, `/quotes/${crypto.randomUUID()}`, "/quotes/not-a-uuid"]) {
+		expect((await other.goto(path))?.status()).toBe(404);
+		await expect(other.getByText(address)).toHaveCount(0);
+
+		const response = await other.request.get(`/api${path}`);
+		expect(response.status()).toBe(404);
+		expect(await response.json()).toEqual({ errors: { form: "Quote not found." } });
+	}
+	await other.close();
+
+	// Admin: from All quotes, with the owner, and back to All quotes
+	const adminPage = await browser.newPage();
+	await signInAt(adminPage, "/quotes", { email: "admin@test.com", password: "admin" });
+	expect(await findRow(adminPage, "/admin/quotes", address)).toContain(email);
+	await adminPage.getByRole("link", { name: address }).click();
+	await adminPage.waitForURL(href);
+	await expect(adminPage.getByLabel("Quote inputs")).toContainText(email);
+	await expect(adminPage.getByRole("link", { name: "Back to All quotes" })).toBeVisible();
+	expect((await adminPage.request.get(`/api${href}`)).status()).toBe(200);
+	await adminPage.close();
+
+	// Signed out: the API refuses before reading
+	const signedOut = await request.get(`/api${href}`);
+	expect(signedOut.status()).toBe(401);
+	expect(await signedOut.json()).toEqual({ errors: { form: "Sign in to see this quote." } });
 });
 
 test("a page number that is not a number is a 404", async ({ page }) => {
