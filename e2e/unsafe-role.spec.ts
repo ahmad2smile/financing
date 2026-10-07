@@ -48,7 +48,7 @@ for (const { name, url, port } of cases) {
 		const { code, output } = await startApp(url, port);
 
 		expect(code).toBe(1);
-		expect(output).toContain("Refusing to start");
+		expect(output).toContain(`"msg":"refusing to start"`);
 		expect(output).toContain("skips row level security");
 	});
 }
